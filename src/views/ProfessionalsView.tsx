@@ -44,6 +44,7 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
   const [formData, setFormData] = useState({
     nome: '',
     especialidade: '',
+    telefone: '',
     bio: ''
   });
 
@@ -69,11 +70,12 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
       setFormData({
         nome: prof.nome,
         especialidade: prof.especialidade,
+        telefone: prof.telefone || '',
         bio: prof.bio || ''
       });
     } else {
       setEditingId(null);
-      setFormData({ nome: '', especialidade: '', bio: '' });
+      setFormData({ nome: '', especialidade: '', telefone: '', bio: '' });
     }
     setShowModal(true);
   };
@@ -89,7 +91,7 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
         await addDoc(collection(db, 'profissionais'), formData);
       }
       setShowModal(false);
-      setFormData({ nome: '', especialidade: '', bio: '' });
+      setFormData({ nome: '', especialidade: '', telefone: '', bio: '' });
       setEditingId(null);
     } catch (error) {
       handleFirestoreError(error, editingId ? OperationType.UPDATE : OperationType.CREATE, 'profissionais');
@@ -243,6 +245,7 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
               </div>
               <div>
                 <h4 className="text-xl font-serif font-bold text-primary-dark">{prof.nome}</h4>
+                <p className="text-[10px] text-primary-dark/40 font-bold uppercase tracking-tighter">{prof.telefone}</p>
                 <div className="flex items-center gap-1 mt-1">
                    <div className="flex text-primary-gold">
                      {[...Array(5)].map((_, i) => <Star key={i} size={10} fill="currentColor" />)}
@@ -320,6 +323,17 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
                     type="text" 
                     value={formData.especialidade}
                     onChange={(e) => setFormData({...formData, especialidade: e.target.value})}
+                    className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-gold/20" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-primary-dark/40 uppercase tracking-widest">Telefone (WhatsApp)</label>
+                  <input 
+                    required
+                    type="tel" 
+                    placeholder="(00) 00000-0000"
+                    value={formData.telefone}
+                    onChange={(e) => setFormData({...formData, telefone: e.target.value})}
                     className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-gold/20" 
                   />
                 </div>

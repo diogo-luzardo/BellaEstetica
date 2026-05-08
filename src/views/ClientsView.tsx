@@ -14,7 +14,8 @@ import {
   Cake,
   X,
   Edit2,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react';
 import { 
   collection, 
@@ -33,7 +34,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { Cliente } from '../types';
+import { Cliente, Procedimento } from '../types';
+import AnamnesisForm from '../components/AnamnesisForm';
 
 export default function ClientsView() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,6 +43,8 @@ export default function ClientsView() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fichaStatus, setFichaStatus] = useState<Record<string, boolean>>({});
+  const [showAnamnesisForm, setShowAnamnesisForm] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -77,6 +81,18 @@ export default function ClientsView() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubFichas = onSnapshot(collection(db, 'fichasAnamnese'), (shot) => {
+      const statuses: Record<string, boolean> = {};
+      shot.docs.forEach(doc => {
+        const data = doc.data();
+        statuses[data.clienteId] = true;
+      });
+      setFichaStatus(statuses);
+    });
+    return () => unsubFichas();
   }, []);
 
   const handleOpenModal = (cliente?: Cliente) => {
@@ -154,13 +170,16 @@ export default function ClientsView() {
       const batch = writeBatch(db);
       
       // 1. Buscar agendamentos deste cliente
-      const q = query(collection(db, 'agendamentos'), where('clienteId', '==', showDeleteModal.id));
-      const agendamentosSnap = await getDocs(q);
+      const qA = query(collection(db, 'agendamentos'), where('clienteId', '==', showDeleteModal.id));
+      const agendamentosSnap = await getDocs(qA);
       
-      // 2. Adicionar exclusões de agendamentos ao batch
-      agendamentosSnap.forEach((appointmentDoc) => {
-        batch.delete(doc(db, 'agendamentos', appointmentDoc.id));
-      });
+      // 2. Buscar fichas de anamnese deste cliente
+      const qF = query(collection(db, 'fichasAnamnese'), where('clienteId', '==', showDeleteModal.id));
+      const fichasSnap = await getDocs(qF);
+      
+      // 3. Adicionar exclusões ao batch
+      agendamentosSnap.forEach((d) => batch.delete(doc(db, 'agendamentos', d.id)));
+      fichasSnap.forEach((d) => batch.delete(doc(db, 'fichasAnamnese', d.id)));
       
       // 3. Adicionar exclusão do cliente ao batch
       batch.delete(doc(db, 'clientes', showDeleteModal.id));
@@ -230,7 +249,15 @@ export default function ClientsView() {
                         {cliente.nome.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-primary-dark">{cliente.nome}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-primary-dark">{cliente.nome}</p>
+                          {Object.keys(fichaStatus).filter(k => k.startsWith(cliente.id + '_')).length > 0 && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-[8px] font-bold rounded-full uppercase tracking-tighter">
+                              <FileText size={8} />
+                              {Object.keys(fichaStatus).filter(k => k.startsWith(cliente.id + '_')).length} Ficha(s)
+                            </span>
+                          )}
+                        </div>
                         {cliente.cpf && (
                           <p className="text-[10px] text-primary-dark/40 font-mono">CPF: {formatCPF(cliente.cpf)}</p>
                         )}
@@ -253,6 +280,13 @@ export default function ClientsView() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setShowAnamnesisForm(cliente.id); }}
+                        className={`p-1.5 rounded-lg transition-colors ${fichaStatus[cliente.id] ? 'bg-primary-gold/10 text-primary-gold' : 'bg-primary-cream text-primary-dark/40 hover:text-primary-gold'}`}
+                        title="Ficha de Anamnese"
+                      >
+                        <FileText size={16} />
+                      </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleOpenModal(cliente); }}
                         className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
@@ -410,6 +444,14 @@ export default function ClientsView() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Form de Anamnese */}
+      {showAnamnesisForm && (
+        <AnamnesisForm 
+          clienteId={showAnamnesisForm}
+          onClose={() => setShowAnamnesisForm(null)}
+        />
+      )}
     </div>
   );
 }

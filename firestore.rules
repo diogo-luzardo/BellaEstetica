@@ -51,17 +51,18 @@ service cloud.firestore {
     }
 
     function isValidProfissional(data) {
-      return data.keys().hasAll(['nome', 'especialidade'])
+      return data.keys().hasAll(['nome', 'especialidade', 'telefone'])
              && data.nome is string && data.nome.size() > 0
              && data.especialidade is string && data.especialidade.size() > 0
+             && data.telefone is string && data.telefone.size() > 0
              && (!('bio' in data) || (data.bio is string));
     }
 
     function isValidAgendamento(data) {
-      return data.keys().hasAll(['clienteId', 'profissionalId', 'procedimentoId', 'data', 'status'])
+      return data.keys().hasAll(['clienteId', 'profissionalId', 'procedimentoIds', 'data', 'status'])
              && isValidId(data.clienteId)
              && isValidId(data.profissionalId)
-             && isValidId(data.procedimentoId)
+             && data.procedimentoIds is list
              && data.status in ['confirmado', 'pendente', 'cancelado', 'concluido']
              && data.data is timestamp
              && (!('notas' in data) || (data.notas is string));
@@ -80,6 +81,25 @@ service cloud.firestore {
              && data.quantidade is number
              && data.valorUnitario is number && data.valorUnitario >= 0
              && data.alertaMinimo is number;
+    }
+
+    function isValidFichaAnamnese(data) {
+      return data.keys().hasAll(['clienteId', 'respostas'])
+             && isValidId(data.clienteId)
+             && data.respostas is map
+             && (!('outrasObservacoes' in data) || (data.outrasObservacoes is string))
+             && (!('consentimento' in data) || (data.consentimento is bool))
+             && (!('autorizoImagem' in data) || (data.autorizoImagem is bool))
+             && (!('createdAt' in data) || (data.createdAt is timestamp))
+             && (!('updatedAt' in data) || (data.updatedAt is timestamp));
+    }
+
+    function isValidDisponibilidade(data) {
+      return data.keys().hasAll(['profissionalId', 'data', 'aberta'])
+             && isValidId(data.profissionalId)
+             && data.data is timestamp
+             && data.aberta is bool
+             && (!('procedimentosIds' in data) || (data.procedimentosIds is list));
     }
 
     // --- Collection Matches ---
@@ -107,7 +127,7 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow create: if isSignedIn() && isValidProfissional(incoming());
       allow update: if isSignedIn() && isValidProfissional(incoming())
-                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'bio']);
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'telefone', 'bio']);
       allow delete: if isSignedIn();
     }
 
@@ -116,7 +136,7 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow create: if isSignedIn() && isValidAgendamento(incoming());
       allow update: if isSignedIn() && isValidAgendamento(incoming())
-                      && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoId']);
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoIds']);
       allow delete: if isSignedIn();
     }
 
@@ -135,6 +155,23 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidProduto(incoming());
       allow update: if isSignedIn() && isValidProduto(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'quantidade', 'valorUnitario', 'categoria', 'alertaMinimo']);
+      allow delete: if isSignedIn();
+    }
+
+    match /fichasAnamnese/{fichaId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidFichaAnamnese(incoming());
+      allow update: if isSignedIn() && isValidFichaAnamnese(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['respostas', 'consentimento', 'autorizoImagem', 'updatedAt']);
+      allow delete: if isSignedIn();
+    }
+    match /disponibilidades/{disponibilidadeId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidDisponibilidade(incoming());
+      allow update: if isSignedIn() && isValidId(incoming().profissionalId)
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['aberta', 'procedimentosIds']);
       allow delete: if isSignedIn();
     }
   }

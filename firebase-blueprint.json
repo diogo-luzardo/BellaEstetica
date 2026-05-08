@@ -41,9 +41,10 @@ const blueprint = {
       properties: {
         nome: { type: "string" },
         especialidade: { type: "string" },
+        telefone: { type: "string" },
         bio: { type: "string" }
       },
-      required: ["nome", "especialidade"]
+      required: ["nome", "especialidade", "telefone"]
     },
     agendamento: {
       title: "Agendamento",
@@ -52,7 +53,7 @@ const blueprint = {
       properties: {
         clienteId: { type: "string" },
         profissionalId: { type: "string" },
-        procedimentoId: { type: "string" },
+        procedimentoIds: { type: "array", items: { type: "string" } },
         data: { type: "string", format: "date-time" },
         status: { type: "string", enum: ["confirmado", "pendente", "cancelado", "concluido"] },
         notas: { type: "string" }
@@ -83,6 +84,33 @@ const blueprint = {
         alertaMinimo: { type: "number" }
       },
       required: ["nome", "quantidade", "valorUnitario"]
+    },
+    disponibilidade: {
+      title: "Disponibilidade",
+      description: "Horários abertos pelos especialistas",
+      type: "object",
+      properties: {
+        profissionalId: { type: "string" },
+        data: { type: "string", format: "date-time" },
+        aberta: { type: "boolean" },
+        procedimentosIds: { type: "array", items: { type: "string" } }
+      },
+      required: ["profissionalId", "data", "aberta"]
+    },
+    fichaAnamnese: {
+      title: "Ficha de Anamnese",
+      description: "Questionário de saúde central do cliente",
+      type: "object",
+      properties: {
+        clienteId: { type: "string" },
+        respostas: { type: "object" },
+        outrasObservacoes: { type: "string" },
+        consentimento: { type: "boolean" },
+        autorizoImagem: { type: "boolean" },
+        createdAt: { type: "string", format: "date-time" },
+        updatedAt: { type: "string", format: "date-time" }
+      },
+      required: ["clienteId", "respostas"]
     }
   },
   firestore: {
@@ -91,7 +119,9 @@ const blueprint = {
     "/profissionais/{profissionalId}": { schema: "profissional", description: "Equipe técnica" },
     "/agendamentos/{agendamentoId}": { schema: "agendamento", description: "Agenda da clínica" },
     "/custos/{custoId}": { schema: "custo", description: "Controle financeiro de despesas" },
-    "/produtos/{produtoId}": { schema: "produto", description: "Estoque de produtos" }
+    "/produtos/{produtoId}": { schema: "produto", description: "Estoque de produtos" },
+    "/fichasAnamnese/{fichaId}": { schema: "fichaAnamnese", description: "Fichas de anamnese preenchidas" },
+    "/disponibilidades/{disponibilidadeId}": { schema: "disponibilidade", description: "Horários de atendimento dos profissionais" }
   }
 };
 
