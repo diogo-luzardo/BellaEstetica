@@ -1,0 +1,98 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { type EntityDefinition } from './src/types';
+
+const blueprint = {
+  entities: {
+    cliente: {
+      title: "Cliente",
+      description: "Informações cadastrais do cliente",
+      type: "object",
+      properties: {
+        nome: { type: "string" },
+        cpf: { type: "string" },
+        telefone: { type: "string" },
+        email: { type: "string", format: "email" },
+        dataNascimento: { type: "string", format: "date" },
+        createdAt: { type: "string", format: "date-time" }
+      },
+      required: ["nome", "cpf", "telefone"]
+    },
+    procedimento: {
+      title: "Procedimento",
+      description: "Serviços oferecidos pela clínica",
+      type: "object",
+      properties: {
+        nome: { type: "string" },
+        preco: { type: "number" },
+        custo: { type: "number" },
+        duracao: { type: "number", description: "Duração em minutos" },
+        categoria: { type: "string" }
+      },
+      required: ["nome", "preco"]
+    },
+    profissional: {
+      title: "Profissional",
+      description: "Profissionais da clínica",
+      type: "object",
+      properties: {
+        nome: { type: "string" },
+        especialidade: { type: "string" },
+        bio: { type: "string" }
+      },
+      required: ["nome", "especialidade"]
+    },
+    agendamento: {
+      title: "Agendamento",
+      description: "Marcação de horários",
+      type: "object",
+      properties: {
+        clienteId: { type: "string" },
+        profissionalId: { type: "string" },
+        procedimentoId: { type: "string" },
+        data: { type: "string", format: "date-time" },
+        status: { type: "string", enum: ["confirmado", "pendente", "cancelado", "concluido"] },
+        notas: { type: "string" }
+      },
+      required: ["clienteId", "profissionalId", "data"]
+    },
+    custo: {
+      title: "Custo",
+      description: "Despesas da clínica",
+      type: "object",
+      properties: {
+        descricao: { type: "string" },
+        valor: { type: "number" },
+        data: { type: "string", format: "date" },
+        categoria: { type: "string" }
+      },
+      required: ["descricao", "valor", "data"]
+    },
+    produto: {
+      title: "Produto",
+      description: "Itens de estoque",
+      type: "object",
+      properties: {
+        nome: { type: "string" },
+        quantidade: { type: "number" },
+        valorUnitario: { type: "number" },
+        categoria: { type: "string" },
+        alertaMinimo: { type: "number" }
+      },
+      required: ["nome", "quantidade", "valorUnitario"]
+    }
+  },
+  firestore: {
+    "/clientes/{clienteId}": { schema: "cliente", description: "Coleção de clientes" },
+    "/procedimentos/{procedimentoId}": { schema: "procedimento", description: "Catálogo de serviços" },
+    "/profissionais/{profissionalId}": { schema: "profissional", description: "Equipe técnica" },
+    "/agendamentos/{agendamentoId}": { schema: "agendamento", description: "Agenda da clínica" },
+    "/custos/{custoId}": { schema: "custo", description: "Controle financeiro de despesas" },
+    "/produtos/{produtoId}": { schema: "produto", description: "Estoque de produtos" }
+  }
+};
+
+export default blueprint;

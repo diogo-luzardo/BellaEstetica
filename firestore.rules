@@ -1,0 +1,141 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidCliente(data) {
+      return data.keys().hasAll(['nome', 'cpf', 'telefone']) 
+             && data.nome is string && data.nome.size() > 0 && data.nome.size() < 150
+             && data.cpf is string && data.cpf.size() == 11
+             && data.telefone is string && data.telefone.size() >= 8 && data.telefone.size() < 30
+             && (!('email' in data) || (data.email is string))
+             && (!('dataNascimento' in data) || (data.dataNascimento is string))
+             && (!('createdAt' in data) || (data.createdAt is timestamp))
+             && (!('updatedAt' in data) || (data.updatedAt is timestamp));
+    }
+
+    function isValidProcedimento(data) {
+      return data.keys().hasAll(['nome', 'preco', 'custo', 'duracao'])
+             && data.nome is string && data.nome.size() > 0
+             && data.preco is number && data.preco >= 0
+             && data.custo is number && data.custo >= 0
+             && data.duracao is number && data.duracao > 0
+             && (!('categoria' in data) || (data.categoria is string));
+    }
+
+    function isValidProfissional(data) {
+      return data.keys().hasAll(['nome', 'especialidade'])
+             && data.nome is string && data.nome.size() > 0
+             && data.especialidade is string && data.especialidade.size() > 0
+             && (!('bio' in data) || (data.bio is string));
+    }
+
+    function isValidAgendamento(data) {
+      return data.keys().hasAll(['clienteId', 'profissionalId', 'procedimentoId', 'data', 'status'])
+             && isValidId(data.clienteId)
+             && isValidId(data.profissionalId)
+             && isValidId(data.procedimentoId)
+             && data.status in ['confirmado', 'pendente', 'cancelado', 'concluido']
+             && data.data is timestamp
+             && (!('notas' in data) || (data.notas is string));
+    }
+
+    function isValidCusto(data) {
+      return data.keys().hasAll(['descricao', 'valor', 'data', 'categoria'])
+             && data.descricao is string && data.descricao.size() > 0
+             && data.valor is number && data.valor >= 0
+             && data.data is string;
+    }
+
+    function isValidProduto(data) {
+      return data.keys().hasAll(['nome', 'quantidade', 'valorUnitario', 'alertaMinimo'])
+             && data.nome is string && data.nome.size() > 0
+             && data.quantidade is number
+             && data.valorUnitario is number && data.valorUnitario >= 0
+             && data.alertaMinimo is number;
+    }
+
+    // --- Collection Matches ---
+
+    match /clientes/{clienteId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidCliente(incoming());
+      allow update: if isSignedIn() && isValidCliente(incoming()) 
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'cpf', 'telefone', 'email', 'dataNascimento', 'updatedAt']);
+      allow delete: if isSignedIn();
+    }
+
+    match /procedimentos/{procedimentoId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidProcedimento(incoming());
+      allow update: if isSignedIn() && isValidProcedimento(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'preco', 'custo', 'duracao', 'categoria']);
+      allow delete: if isSignedIn();
+    }
+
+    match /profissionais/{profissionalId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidProfissional(incoming());
+      allow update: if isSignedIn() && isValidProfissional(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'bio']);
+      allow delete: if isSignedIn();
+    }
+
+    match /agendamentos/{agendamentoId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidAgendamento(incoming());
+      allow update: if isSignedIn() && isValidAgendamento(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoId']);
+      allow delete: if isSignedIn();
+    }
+
+    match /custos/{custoId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidCusto(incoming());
+      allow update: if isSignedIn() && isValidCusto(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['descricao', 'valor', 'data', 'categoria']);
+      allow delete: if isSignedIn();
+    }
+
+    match /produtos/{produtoId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidProduto(incoming());
+      allow update: if isSignedIn() && isValidProduto(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'quantidade', 'valorUnitario', 'categoria', 'alertaMinimo']);
+      allow delete: if isSignedIn();
+    }
+  }
+}
