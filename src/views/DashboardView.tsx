@@ -13,8 +13,10 @@ import {
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { seedMockData } from '../lib/mockData';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function DashboardView() {
+  const { currentTenantId, userProfile } = useAuth();
   const stats = [
     { label: 'Total Clientes', value: '124', icon: Users, color: 'text-blue-500' },
     { label: 'Agendamentos Hoje', value: '8', icon: Calendar, color: 'text-primary-gold' },
@@ -25,18 +27,20 @@ export default function DashboardView() {
   return (
     <div className="space-y-8">
       {/* Dev Tools / Seed Header */}
-      <div className="flex items-center justify-between bg-primary-gold/5 p-4 rounded-3xl border border-primary-gold/10">
-        <div>
-          <h4 className="text-sm font-bold text-primary-gold uppercase tracking-widest">Modo de Teste</h4>
-          <p className="text-[10px] text-primary-dark/60">Clique ao lado para preencher a clínica com dados modelo.</p>
+      {(userProfile?.role === 'admin' || userProfile?.role === 'gerencia') && (
+        <div className="flex items-center justify-between bg-primary-gold/5 p-4 rounded-3xl border border-primary-gold/10">
+          <div>
+            <h4 className="text-sm font-bold text-primary-gold uppercase tracking-widest">Modo de Teste</h4>
+            <p className="text-[10px] text-primary-dark/60">Clique ao lado para preencher a clínica com dados modelo.</p>
+          </div>
+          <button 
+            onClick={() => seedMockData(currentTenantId || '')}
+            className="bg-primary-gold text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-gold/20"
+          >
+            Gerar Dados Iniciais
+          </button>
         </div>
-        <button 
-          onClick={seedMockData}
-          className="bg-primary-gold text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-gold/20"
-        >
-          Gerar Dados Iniciais
-        </button>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => (

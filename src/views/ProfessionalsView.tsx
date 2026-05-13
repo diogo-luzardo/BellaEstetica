@@ -35,8 +35,10 @@ import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Profissional, Agendamento, Procedimento, Cliente } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: string) => void }) {
+  const { currentTenantId, userProfile } = useAuth();
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -49,20 +51,27 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'profissionais'), orderBy('nome'));
+    if (!currentTenantId) return;
+
+    const q = query(
+      collection(db, 'profissionais'), 
+      where('tenantId', '==', currentTenantId)
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Profissional[];
-      setProfissionais(docs);
+      
+      // Sort client-side by name
+      setProfissionais(docs.sort((a, b) => a.nome.localeCompare(b.nome)));
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'profissionais');
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [currentTenantId]);
 
   const handleOpenModal = (prof?: Profissional) => {
     if (prof) {
@@ -85,10 +94,15 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
     if (!formData.nome || !formData.especialidade) return;
 
     try {
+      const cleanData = {
+        ...formData,
+        tenantId: currentTenantId!
+      };
+
       if (editingId) {
-        await updateDoc(doc(db, 'profissionais', editingId), formData);
+        await updateDoc(doc(db, 'profissionais', editingId), cleanData);
       } else {
-        await addDoc(collection(db, 'profissionais'), formData);
+        await addDoc(collection(db, 'profissionais'), cleanData);
       }
       setShowModal(false);
       setFormData({ nome: '', especialidade: '', telefone: '', bio: '' });
@@ -119,45 +133,57 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
   }, [showFinanceModal]);
 
   const loadFinanceData = async (profId: string) => {
+    if (!currentTenantId) return;
     setLoadingFinance(true);
     try {
-      // 1. Fetch all procedures for pricing mapping
-      const procSnap = await getDocs(collection(db, 'procedimentos'));
+      // 1. Fetch procedures for this tenant
+      const procSnap = await getDocs(
+        query(collection(db, 'procedimentos'), where('tenantId', '==', currentTenantId))
+      );
       const procsMap = new Map();
       procSnap.docs.forEach(d => procsMap.set(d.id, d.data()));
 
-      // 2. Fetch all clients for name mapping
-      const clientSnap = await getDocs(collection(db, 'clientes'));
+      // 2. Fetch clients for this tenant
+      const clientSnap = await getDocs(
+        query(collection(db, 'clientes'), where('tenantId', '==', currentTenantId))
+      );
       const clientsMap = new Map();
       clientSnap.docs.forEach(d => clientsMap.set(d.id, d.data()));
 
-      // 3. Fetch finished appointments
+      // 3. Fetch finished appointments for this tenant
       const q = query(
         collection(db, 'agendamentos'), 
+        where('tenantId', '==', currentTenantId),
         where('profissionalId', '==', profId),
-        where('status', '==', 'concluido'),
-        orderBy('data', 'desc')
+        where('status', '==', 'concluido')
       );
       const appointSnap = await getDocs(q);
       
       let total = 0;
-      const history = appointSnap.docs.map(docSnap => {
+      const rawHistory = appointSnap.docs.map(docSnap => {
         const data = docSnap.data() as Agendamento;
-        const proc = procsMap.get(data.procedimentoId);
+        const appProcIds = data.procedimentoIds || [(data as any).procedimentoId];
         const client = clientsMap.get(data.clienteId);
-        const valor = proc?.preco || 0;
-        total += valor;
+        
+        // Calcule o valor baseando-se em todos os procedimentos do agendamento
+        const selectedProcs = Array.isArray(appProcIds) ? appProcIds.map(id => procsMap.get(id)) : [];
+        const valorTotalAgendamento = selectedProcs.reduce((acc, p) => acc + (p?.preco || 0), 0);
+        
+        total += valorTotalAgendamento;
         
         return {
           id: docSnap.id,
           data: data.data,
           clienteNome: client?.nome || 'Cliente Removido',
-          procedimentoNome: proc?.nome || 'Serviço Removido',
-          valor
+          procedimentoNome: selectedProcs.map(p => p?.nome).join(', ') || 'Serviço Removido',
+          valor: valorTotalAgendamento
         };
       });
 
-      setEarningsData({ total, history });
+      // Sort history by date desc client-side
+      const historySorted = rawHistory.sort((a, b) => b.data.seconds - a.data.seconds);
+
+      setEarningsData({ total, history: historySorted });
     } catch (error) {
       console.error(error);
       handleFirestoreError(error, OperationType.LIST, 'agendamentos');
@@ -167,12 +193,16 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
   };
 
   const handleDelete = async () => {
-    if (!showDeleteModal) return;
+    if (!showDeleteModal || !userProfile?.tenantId) return;
     try {
       const batch = writeBatch(db);
       
       // 1. Buscar agendamentos deste profissional
-      const q = query(collection(db, 'agendamentos'), where('profissionalId', '==', showDeleteModal.id));
+      const q = query(
+        collection(db, 'agendamentos'), 
+        where('tenantId', '==', userProfile.tenantId),
+        where('profissionalId', '==', showDeleteModal.id)
+      );
       const agendamentosSnap = await getDocs(q);
       
       // 2. Adicionar exclusões de agendamentos ao batch

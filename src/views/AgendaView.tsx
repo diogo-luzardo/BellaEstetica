@@ -37,8 +37,10 @@ import { Profissional, Cliente, Procedimento, Agendamento, Disponibilidade } fro
 import { motion, AnimatePresence } from 'motion/react';
 import AnamnesisForm from '../components/AnamnesisForm';
 import { Lock, Unlock, Eye, Settings2, Check } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AgendaView({ initialProfId = '' }: { initialProfId?: string }) {
+  const { currentTenantId, userProfile } = useAuth();
   const hours = [
     '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', 
     '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', 
@@ -82,18 +84,21 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   const [fichaStatus, setFichaStatus] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (agendamentos.length > 0) {
-      const unsubFichas = onSnapshot(collection(db, 'fichasAnamnese'), (shot) => {
+    if (!currentTenantId || agendamentos.length === 0) return;
+    
+    const unsubFichas = onSnapshot(
+      query(collection(db, 'fichasAnamnese'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
         const statuses: Record<string, boolean> = {};
         shot.docs.forEach(doc => {
           const data = doc.data();
           statuses[data.clienteId] = true;
         });
         setFichaStatus(statuses);
-      });
-      return () => unsubFichas();
-    }
-  }, [agendamentos]);
+      }
+    );
+    return () => unsubFichas();
+  }, [agendamentos, userProfile]);
 
   const handleUpdateStatus = async (appId: string, newStatus: string) => {
     try {
@@ -146,27 +151,48 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   };
 
   useEffect(() => {
-    const unsubProf = onSnapshot(collection(db, 'profissionais'), (shot) => {
-      const prods = shot.docs.map(d => ({ id: d.id, ...d.data() } as Profissional));
-      setProfissionais(prods);
-      // Não forçamos seleção automática para permitir "Todos" como padrão
-    });
-    const unsubCli = onSnapshot(collection(db, 'clientes'), (shot) => {
-      setClientes(shot.docs.map(d => ({ id: d.id, ...d.data() } as Cliente)));
-    });
-    const unsubProc = onSnapshot(collection(db, 'procedimentos'), (shot) => {
-      setProcedimentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Procedimento)));
-    });
-    const unsubAgenda = onSnapshot(collection(db, 'agendamentos'), (shot) => {
-      setAgendamentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Agendamento)));
-    });
-    const unsubDisp = onSnapshot(collection(db, 'disponibilidades'), (shot) => {
-      setDisponibilidades(shot.docs.map(d => ({ id: d.id, ...d.data() } as Disponibilidade)));
-      setLoading(false);
-    });
+    if (!currentTenantId) return;
+
+    const unsubProf = onSnapshot(
+      query(collection(db, 'profissionais'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const prods = shot.docs.map(d => ({ id: d.id, ...d.data() } as Profissional));
+        setProfissionais(prods);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'profissionais')
+    );
+    const unsubCli = onSnapshot(
+      query(collection(db, 'clientes'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        setClientes(shot.docs.map(d => ({ id: d.id, ...d.data() } as Cliente)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'clientes')
+    );
+    const unsubProc = onSnapshot(
+      query(collection(db, 'procedimentos'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        setProcedimentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Procedimento)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'procedimentos')
+    );
+    const unsubAgenda = onSnapshot(
+      query(collection(db, 'agendamentos'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        setAgendamentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Agendamento)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'agendamentos')
+    );
+    const unsubDisp = onSnapshot(
+      query(collection(db, 'disponibilidades'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        setDisponibilidades(shot.docs.map(d => ({ id: d.id, ...d.data() } as Disponibilidade)));
+        setLoading(false);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'disponibilidades')
+    );
 
     return () => { unsubProf(); unsubCli(); unsubProc(); unsubAgenda(); unsubDisp(); };
-  }, []);
+  }, [currentTenantId]);
 
   const handleOpenBook = (hour: string, profId: string) => {
     setSelectedSlot({ hour, profId });
@@ -222,6 +248,7 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
 
       await addDoc(collection(db, 'agendamentos'), {
         ...formData,
+        tenantId: currentTenantId,
         profissionalId: selectedSlot.profId,
         data: Timestamp.fromDate(bookDate),
         status: 'confirmado'
@@ -347,6 +374,7 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
           
           const newDoc = doc(collection(db, 'disponibilidades'));
           batch.set(newDoc, {
+            tenantId: userProfile!.tenantId,
             profissionalId: profId,
             data: Timestamp.fromDate(bookDate),
             aberta: true,

@@ -36,8 +36,10 @@ import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Cliente, Procedimento } from '../types';
 import AnamnesisForm from '../components/AnamnesisForm';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ClientsView() {
+  const { currentTenantId, userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -68,24 +70,39 @@ export default function ClientsView() {
   };
 
   useEffect(() => {
-    const q = query(collection(db, 'clientes'), orderBy('createdAt', 'desc'));
+    if (!currentTenantId) return;
+
+    const q = query(
+      collection(db, 'clientes'), 
+      where('tenantId', '==', currentTenantId)
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Cliente[];
-      setClientes(docs);
+      
+      // Sort client-side by createdAt desc
+      setClientes(docs.sort((a, b) => {
+        const dateA = (a as any).createdAt?.seconds || 0;
+        const dateB = (b as any).createdAt?.seconds || 0;
+        return dateB - dateA;
+      }));
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'clientes');
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [currentTenantId]);
 
   useEffect(() => {
-    const unsubFichas = onSnapshot(collection(db, 'fichasAnamnese'), (shot) => {
-      const statuses: Record<string, boolean> = {};
+    if (!currentTenantId) return;
+
+    const unsubFichas = onSnapshot(
+      query(collection(db, 'fichasAnamnese'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const statuses: Record<string, boolean> = {};
       shot.docs.forEach(doc => {
         const data = doc.data();
         statuses[data.clienteId] = true;
@@ -93,7 +110,7 @@ export default function ClientsView() {
       setFichaStatus(statuses);
     });
     return () => unsubFichas();
-  }, []);
+  }, [currentTenantId]);
 
   const handleOpenModal = (cliente?: Cliente) => {
     setCpfError('');
@@ -125,8 +142,12 @@ export default function ClientsView() {
         return;
       }
 
-      // Verificar CPF único
-      const cpfQuery = query(collection(db, 'clientes'), where('cpf', '==', cleanCpf));
+      // Verificar CPF único no mesmo tenant
+      const cpfQuery = query(
+        collection(db, 'clientes'), 
+        where('tenantId', '==', currentTenantId),
+        where('cpf', '==', cleanCpf)
+      );
       const cpfSnap = await getDocs(cpfQuery);
       
       const isDuplicate = cpfSnap.docs.some(doc => doc.id !== editingId);
@@ -137,6 +158,7 @@ export default function ClientsView() {
 
       // Limpar campos vazios para não enviar strings vazias ao Firestore
       const cleanData: any = {
+        tenantId: currentTenantId,
         nome: formData.nome.trim(),
         cpf: cleanCpf,
         telefone: formData.telefone.trim()
@@ -165,16 +187,24 @@ export default function ClientsView() {
   const [showDeleteModal, setShowDeleteModal] = useState<{id: string, name: string} | null>(null);
 
   const handleDelete = async () => {
-    if (!showDeleteModal) return;
+    if (!showDeleteModal || !currentTenantId) return;
     try {
       const batch = writeBatch(db);
       
       // 1. Buscar agendamentos deste cliente
-      const qA = query(collection(db, 'agendamentos'), where('clienteId', '==', showDeleteModal.id));
+      const qA = query(
+        collection(db, 'agendamentos'), 
+        where('tenantId', '==', currentTenantId),
+        where('clienteId', '==', showDeleteModal.id)
+      );
       const agendamentosSnap = await getDocs(qA);
       
       // 2. Buscar fichas de anamnese deste cliente
-      const qF = query(collection(db, 'fichasAnamnese'), where('clienteId', '==', showDeleteModal.id));
+      const qF = query(
+        collection(db, 'fichasAnamnese'), 
+        where('tenantId', '==', currentTenantId),
+        where('clienteId', '==', showDeleteModal.id)
+      );
       const fichasSnap = await getDocs(qF);
       
       // 3. Adicionar exclusões ao batch

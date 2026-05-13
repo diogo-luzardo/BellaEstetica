@@ -12,6 +12,7 @@ const blueprint = {
       description: "Informações cadastrais do cliente",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         nome: { type: "string" },
         cpf: { type: "string" },
         telefone: { type: "string" },
@@ -19,38 +20,41 @@ const blueprint = {
         dataNascimento: { type: "string", format: "date" },
         createdAt: { type: "string", format: "date-time" }
       },
-      required: ["nome", "cpf", "telefone"]
+      required: ["tenantId", "nome", "cpf", "telefone"]
     },
     procedimento: {
       title: "Procedimento",
       description: "Serviços oferecidos pela clínica",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         nome: { type: "string" },
         preco: { type: "number" },
         custo: { type: "number" },
         duracao: { type: "number", description: "Duração em minutos" },
         categoria: { type: "string" }
       },
-      required: ["nome", "preco"]
+      required: ["tenantId", "nome", "preco"]
     },
     profissional: {
       title: "Profissional",
       description: "Profissionais da clínica",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         nome: { type: "string" },
         especialidade: { type: "string" },
         telefone: { type: "string" },
         bio: { type: "string" }
       },
-      required: ["nome", "especialidade", "telefone"]
+      required: ["tenantId", "nome", "especialidade", "telefone"]
     },
     agendamento: {
       title: "Agendamento",
       description: "Marcação de horários",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         clienteId: { type: "string" },
         profissionalId: { type: "string" },
         procedimentoIds: { type: "array", items: { type: "string" } },
@@ -58,50 +62,54 @@ const blueprint = {
         status: { type: "string", enum: ["confirmado", "pendente", "cancelado", "concluido"] },
         notas: { type: "string" }
       },
-      required: ["clienteId", "profissionalId", "data"]
+      required: ["tenantId", "clienteId", "profissionalId", "data"]
     },
     custo: {
       title: "Custo",
       description: "Despesas da clínica",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         descricao: { type: "string" },
         valor: { type: "number" },
         data: { type: "string", format: "date" },
         categoria: { type: "string" }
       },
-      required: ["descricao", "valor", "data"]
+      required: ["tenantId", "descricao", "valor", "data"]
     },
     produto: {
       title: "Produto",
       description: "Itens de estoque",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         nome: { type: "string" },
         quantidade: { type: "number" },
         valorUnitario: { type: "number" },
         categoria: { type: "string" },
         alertaMinimo: { type: "number" }
       },
-      required: ["nome", "quantidade", "valorUnitario"]
+      required: ["tenantId", "nome", "quantidade", "valorUnitario"]
     },
     disponibilidade: {
       title: "Disponibilidade",
       description: "Horários abertos pelos especialistas",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         profissionalId: { type: "string" },
         data: { type: "string", format: "date-time" },
         aberta: { type: "boolean" },
         procedimentosIds: { type: "array", items: { type: "string" } }
       },
-      required: ["profissionalId", "data", "aberta"]
+      required: ["tenantId", "profissionalId", "data", "aberta"]
     },
     fichaAnamnese: {
       title: "Ficha de Anamnese",
       description: "Questionário de saúde central do cliente",
       type: "object",
       properties: {
+        tenantId: { type: "string" },
         clienteId: { type: "string" },
         respostas: { type: "object" },
         outrasObservacoes: { type: "string" },
@@ -110,10 +118,37 @@ const blueprint = {
         createdAt: { type: "string", format: "date-time" },
         updatedAt: { type: "string", format: "date-time" }
       },
-      required: ["clienteId", "respostas"]
+      required: ["tenantId", "clienteId", "respostas"]
+    },
+    usuario: {
+      title: "Usuário",
+      description: "Perfil de acesso ao sistema",
+      type: "object",
+      properties: {
+        uid: { type: "string" },
+        email: { type: "string" },
+        role: { type: "string", enum: ["admin", "gerencia", "profissional"] },
+        tenantId: { type: "string" }
+      },
+      required: ["uid", "email", "role", "tenantId"]
+    },
+    tenant: {
+      title: "Unidade / Tenant",
+      description: "Informações da assinatura e unidade",
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        plan: { type: "string", enum: ["mensal", "anual", "trial"] },
+        status: { type: "string", enum: ["ativo", "inativo", "pendente"] },
+        expiresAt: { type: "string", format: "date-time" },
+        createdAt: { type: "string", format: "date-time" }
+      },
+      required: ["name", "plan", "status", "expiresAt"]
     }
   },
   firestore: {
+    "/tenants/{tenantId}": { schema: "tenant", description: "Configurações das assinaturas" },
+    "/usuarios/{uid}": { schema: "usuario", description: "Perfis de usuários" },
     "/clientes/{clienteId}": { schema: "cliente", description: "Coleção de clientes" },
     "/procedimentos/{procedimentoId}": { schema: "procedimento", description: "Catálogo de serviços" },
     "/profissionais/{profissionalId}": { schema: "profissional", description: "Equipe técnica" },

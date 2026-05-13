@@ -16,6 +16,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function currentUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isTenantOf(data) {
+      let user = currentUserData();
+      return user.role == 'admin' || data.tenantId == user.tenantId;
+    }
+
+    function isManager() {
+      return currentUserData().role in ['admin', 'gerencia'];
+    }
+
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
     }
@@ -30,8 +43,17 @@ service cloud.firestore {
 
     // --- Validation Helpers ---
 
+    function isValidUsuario(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'tenantId'])
+             && data.uid == request.auth.uid
+             && data.email is string
+             && data.role in ['admin', 'gerencia', 'profissional']
+             && data.tenantId is string;
+    }
+
     function isValidCliente(data) {
-      return data.keys().hasAll(['nome', 'cpf', 'telefone']) 
+      return data.keys().hasAll(['tenantId', 'nome', 'cpf', 'telefone']) 
+             && data.tenantId is string
              && data.nome is string && data.nome.size() > 0 && data.nome.size() < 150
              && data.cpf is string && data.cpf.size() == 11
              && data.telefone is string && data.telefone.size() >= 8 && data.telefone.size() < 30
@@ -42,7 +64,8 @@ service cloud.firestore {
     }
 
     function isValidProcedimento(data) {
-      return data.keys().hasAll(['nome', 'preco', 'custo', 'duracao'])
+      return data.keys().hasAll(['tenantId', 'nome', 'preco', 'custo', 'duracao'])
+             && data.tenantId is string
              && data.nome is string && data.nome.size() > 0
              && data.preco is number && data.preco >= 0
              && data.custo is number && data.custo >= 0
@@ -51,7 +74,8 @@ service cloud.firestore {
     }
 
     function isValidProfissional(data) {
-      return data.keys().hasAll(['nome', 'especialidade', 'telefone'])
+      return data.keys().hasAll(['tenantId', 'nome', 'especialidade', 'telefone'])
+             && data.tenantId is string
              && data.nome is string && data.nome.size() > 0
              && data.especialidade is string && data.especialidade.size() > 0
              && data.telefone is string && data.telefone.size() > 0
@@ -59,7 +83,8 @@ service cloud.firestore {
     }
 
     function isValidAgendamento(data) {
-      return data.keys().hasAll(['clienteId', 'profissionalId', 'procedimentoIds', 'data', 'status'])
+      return data.keys().hasAll(['tenantId', 'clienteId', 'profissionalId', 'procedimentoIds', 'data', 'status'])
+             && data.tenantId is string
              && isValidId(data.clienteId)
              && isValidId(data.profissionalId)
              && data.procedimentoIds is list
@@ -69,14 +94,16 @@ service cloud.firestore {
     }
 
     function isValidCusto(data) {
-      return data.keys().hasAll(['descricao', 'valor', 'data', 'categoria'])
+      return data.keys().hasAll(['tenantId', 'descricao', 'valor', 'data', 'categoria'])
+             && data.tenantId is string
              && data.descricao is string && data.descricao.size() > 0
              && data.valor is number && data.valor >= 0
              && data.data is string;
     }
 
     function isValidProduto(data) {
-      return data.keys().hasAll(['nome', 'quantidade', 'valorUnitario', 'alertaMinimo'])
+      return data.keys().hasAll(['tenantId', 'nome', 'quantidade', 'valorUnitario', 'alertaMinimo'])
+             && data.tenantId is string
              && data.nome is string && data.nome.size() > 0
              && data.quantidade is number
              && data.valorUnitario is number && data.valorUnitario >= 0
@@ -84,7 +111,8 @@ service cloud.firestore {
     }
 
     function isValidFichaAnamnese(data) {
-      return data.keys().hasAll(['clienteId', 'respostas'])
+      return data.keys().hasAll(['tenantId', 'clienteId', 'respostas'])
+             && data.tenantId is string
              && isValidId(data.clienteId)
              && data.respostas is map
              && (!('outrasObservacoes' in data) || (data.outrasObservacoes is string))
@@ -95,7 +123,8 @@ service cloud.firestore {
     }
 
     function isValidDisponibilidade(data) {
-      return data.keys().hasAll(['profissionalId', 'data', 'aberta'])
+      return data.keys().hasAll(['tenantId', 'profissionalId', 'data', 'aberta'])
+             && data.tenantId is string
              && isValidId(data.profissionalId)
              && data.data is timestamp
              && data.aberta is bool
@@ -104,75 +133,86 @@ service cloud.firestore {
 
     // --- Collection Matches ---
 
+    match /tenants/{tenantId} {
+      allow read: if isSignedIn() && (currentUserData().tenantId == tenantId || currentUserData().role == 'admin');
+      allow write: if isSignedIn() && currentUserData().role == 'admin';
+    }
+
+    match /usuarios/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || currentUserData().role == 'admin');
+      allow create: if isSignedIn() && isValidUsuario(incoming());
+      allow update: if isSignedIn() && (request.auth.uid == uid || currentUserData().role == 'admin') && isValidUsuario(incoming());
+    }
+
     match /clientes/{clienteId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidCliente(incoming());
-      allow update: if isSignedIn() && isValidCliente(incoming()) 
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidCliente(incoming()) && isTenantOf(incoming());
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isValidCliente(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'cpf', 'telefone', 'email', 'dataNascimento', 'updatedAt']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 
     match /procedimentos/{procedimentoId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidProcedimento(incoming());
-      allow update: if isSignedIn() && isValidProcedimento(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidProcedimento(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProcedimento(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'preco', 'custo', 'duracao', 'categoria']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 
     match /profissionais/{profissionalId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidProfissional(incoming());
-      allow update: if isSignedIn() && isValidProfissional(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidProfissional(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProfissional(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'telefone', 'bio']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 
     match /agendamentos/{agendamentoId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidAgendamento(incoming());
-      allow update: if isSignedIn() && isValidAgendamento(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidAgendamento(incoming()) && isTenantOf(incoming());
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isValidAgendamento(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoIds']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data);
     }
 
     match /custos/{custoId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidCusto(incoming());
-      allow update: if isSignedIn() && isValidCusto(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidCusto(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidCusto(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['descricao', 'valor', 'data', 'categoria']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 
     match /produtos/{produtoId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidProduto(incoming());
-      allow update: if isSignedIn() && isValidProduto(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidProduto(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProduto(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'quantidade', 'valorUnitario', 'categoria', 'alertaMinimo']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 
     match /fichasAnamnese/{fichaId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidFichaAnamnese(incoming());
-      allow update: if isSignedIn() && isValidFichaAnamnese(incoming())
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidFichaAnamnese(incoming()) && isTenantOf(incoming());
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isValidFichaAnamnese(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['respostas', 'consentimento', 'autorizoImagem', 'updatedAt']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
     match /disponibilidades/{disponibilidadeId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isSignedIn() && isValidDisponibilidade(incoming());
-      allow update: if isSignedIn() && isValidId(incoming().profissionalId)
+      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidDisponibilidade(incoming()) && isTenantOf(incoming());
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isValidDisponibilidade(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['aberta', 'procedimentosIds']);
-      allow delete: if isSignedIn();
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
   }
 }

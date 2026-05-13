@@ -15,6 +15,7 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Cliente, FichaAnamnese } from '../types';
 import { X, Check, Save, FileText, AlertCircle, PlusCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface AnamnesisFormProps {
   clienteId: string;
@@ -22,6 +23,7 @@ interface AnamnesisFormProps {
 }
 
 export default function AnamnesisForm({ clienteId, onClose }: AnamnesisFormProps) {
+  const { currentTenantId, userProfile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ficha, setFicha] = useState<FichaAnamnese | null>(null);
@@ -67,15 +69,24 @@ export default function AnamnesisForm({ clienteId, onClose }: AnamnesisFormProps
 
   useEffect(() => {
     const loadData = async () => {
+      if (!currentTenantId) return;
       try {
         setLoading(true);
         // Load Client info
-        const clientSnap = await getDocs(query(collection(db, 'clientes'), where('__name__', '==', clienteId), limit(1)));
+        const clientSnap = await getDocs(
+          query(
+            collection(db, 'clientes'), 
+            where('__name__', '==', clienteId), 
+            where('tenantId', '==', currentTenantId),
+            limit(1)
+          )
+        );
         if (!clientSnap.empty) setCliente({ id: clientSnap.docs[0].id, ...clientSnap.docs[0].data() } as Cliente);
 
         // Load existing Ficha
         const q = query(
           collection(db, 'fichasAnamnese'), 
+          where('tenantId', '==', currentTenantId),
           where('clienteId', '==', clienteId),
           limit(1)
         );
@@ -99,7 +110,7 @@ export default function AnamnesisForm({ clienteId, onClose }: AnamnesisFormProps
     };
 
     loadData();
-  }, [clienteId]);
+  }, [clienteId, currentTenantId]);
 
   const handleToggle = (field: keyof typeof initialRespostas) => {
     if (field === 'alergiaQuais') return;
@@ -130,6 +141,7 @@ export default function AnamnesisForm({ clienteId, onClose }: AnamnesisFormProps
         });
       } else {
         await addDoc(collection(db, 'fichasAnamnese'), {
+          tenantId: currentTenantId!,
           clienteId,
           respostas: formData.respostas,
           outrasObservacoes: formData.outrasObservacoes,

@@ -25,15 +25,18 @@ import {
   deleteDoc,
   doc,
   query, 
-  orderBy 
+  orderBy,
+  where
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Procedimento, Custo, Produto } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Edit2, Trash2, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ManagementView() {
+  const { currentTenantId, userProfile } = useAuth();
   const [tab, setTab] = useState<'procedimentos' | 'estoque' | 'custos'>('procedimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -68,19 +71,36 @@ export default function ManagementView() {
   });
 
   useEffect(() => {
+    if (!currentTenantId) return;
     setLoading(true);
-    const unsubProc = onSnapshot(query(collection(db, 'procedimentos'), orderBy('nome')), (shot) => {
-      setProcedimentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Procedimento)));
-      setLoading(false);
-    });
-    const unsubCusto = onSnapshot(query(collection(db, 'custos'), orderBy('data', 'desc')), (shot) => {
-      setCustos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Custo)));
-    });
-    const unsubProd = onSnapshot(query(collection(db, 'produtos'), orderBy('nome')), (shot) => {
-      setProdutos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Produto)));
-    });
+
+    const unsubProc = onSnapshot(
+      query(collection(db, 'procedimentos'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const data = shot.docs.map(d => ({ id: d.id, ...d.data() } as Procedimento));
+        setProcedimentos(data.sort((a, b) => (a.nome || '').localeCompare(b.nome || '')));
+        setLoading(false);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'procedimentos')
+    );
+    const unsubCusto = onSnapshot(
+      query(collection(db, 'custos'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const data = shot.docs.map(d => ({ id: d.id, ...d.data() } as Custo));
+        setCustos(data.sort((a, b) => new Date(b.data || 0).getTime() - new Date(a.data || 0).getTime()));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'custos')
+    );
+    const unsubProd = onSnapshot(
+      query(collection(db, 'produtos'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const data = shot.docs.map(d => ({ id: d.id, ...d.data() } as Produto));
+        setProdutos(data.sort((a, b) => (a.nome || '').localeCompare(b.nome || '')));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'produtos')
+    );
     return () => { unsubProc(); unsubCusto(); unsubProd(); };
-  }, []);
+  }, [currentTenantId]);
 
   const handleOpenModal = (item?: any) => {
     if (item) {
@@ -88,28 +108,28 @@ export default function ManagementView() {
       if (tab === 'procedimentos') {
         const p = item as Procedimento;
         setProcForm({
-          nome: p.nome,
-          preco: p.preco.toString(),
-          custo: p.custo.toString(),
-          duracao: p.duracao.toString(),
-          categoria: p.categoria
+          nome: p.nome || '',
+          preco: (p.preco ?? 0).toString(),
+          custo: (p.custo ?? 0).toString(),
+          duracao: (p.duracao ?? 0).toString(),
+          categoria: p.categoria || ''
         });
       } else if (tab === 'custos') {
         const c = item as Custo;
         setCustoForm({
-          descricao: c.descricao,
-          valor: c.valor.toString(),
-          data: c.data,
-          categoria: c.categoria
+          descricao: c.descricao || '',
+          valor: (c.valor ?? 0).toString(),
+          data: c.data || new Date().toISOString().split('T')[0],
+          categoria: c.categoria || ''
         });
       } else if (tab === 'estoque') {
         const pr = item as Produto;
         setProdForm({
-          nome: pr.nome,
-          quantidade: pr.quantidade.toString(),
-          valorUnitario: pr.valorUnitario.toString(),
-          categoria: pr.categoria,
-          alertaMinimo: pr.alertaMinimo.toString()
+          nome: pr.nome || '',
+          quantidade: (pr.quantidade ?? 0).toString(),
+          valorUnitario: (pr.valorUnitario ?? 0).toString(),
+          categoria: pr.categoria || '',
+          alertaMinimo: (pr.alertaMinimo ?? 0).toString()
         });
       }
     } else {
@@ -126,6 +146,7 @@ export default function ManagementView() {
     try {
       const data = {
         ...prodForm,
+        tenantId: currentTenantId!,
         quantidade: parseInt(prodForm.quantidade),
         valorUnitario: parseFloat(prodForm.valorUnitario),
         alertaMinimo: parseInt(prodForm.alertaMinimo)
@@ -148,6 +169,7 @@ export default function ManagementView() {
     try {
       const data = {
         ...procForm,
+        tenantId: currentTenantId!,
         preco: parseFloat(procForm.preco),
         custo: parseFloat(procForm.custo),
         duracao: parseInt(procForm.duracao)
@@ -171,6 +193,7 @@ export default function ManagementView() {
     try {
       const data = {
         ...custoForm,
+        tenantId: currentTenantId!,
         valor: parseFloat(custoForm.valor)
       };
 
@@ -266,7 +289,7 @@ export default function ManagementView() {
             {loading ? (
               <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Carregando...</td></tr>
             ) : tab === 'procedimentos' ? (
-              procedimentos.filter(p => p.nome.toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+              procedimentos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
                 <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                   <td className="px-6 py-4 font-medium">
                     {item.nome}
@@ -296,7 +319,7 @@ export default function ManagementView() {
                 </tr>
               ))
             ) : tab === 'estoque' ? (
-              produtos.filter(p => p.nome.toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+              produtos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
                 <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                   <td className="px-6 py-4 font-medium">
                     {item.nome}
@@ -330,7 +353,7 @@ export default function ManagementView() {
                 </tr>
               ))
             ) : tab === 'custos' ? (
-              custos.filter(c => c.descricao.toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+              custos.filter(c => (c.descricao || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
                 <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                   <td className="px-6 py-4 font-medium">{item.descricao}</td>
                   <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>

@@ -5,6 +5,7 @@
 
 export interface Cliente {
   id: string;
+  tenantId: string;
   nome: string;
   cpf: string;
   telefone: string;
@@ -15,6 +16,7 @@ export interface Cliente {
 
 export interface Procedimento {
   id: string;
+  tenantId: string;
   nome: string;
   preco: number;
   custo: number;
@@ -24,6 +26,7 @@ export interface Procedimento {
 
 export interface Profissional {
   id: string;
+  tenantId: string;
   nome: string;
   especialidade: string;
   telefone: string;
@@ -32,6 +35,7 @@ export interface Profissional {
 
 export interface Agendamento {
   id: string;
+  tenantId: string;
   clienteId: string;
   profissionalId: string;
   procedimentoIds: string[];
@@ -42,6 +46,7 @@ export interface Agendamento {
 
 export interface Custo {
   id: string;
+  tenantId: string;
   descricao: string;
   valor: number;
   data: string;
@@ -50,6 +55,7 @@ export interface Custo {
 
 export interface Produto {
   id: string;
+  tenantId: string;
   nome: string;
   quantidade: number;
   valorUnitario: number;
@@ -59,6 +65,7 @@ export interface Produto {
 
 export interface Disponibilidade {
   id: string;
+  tenantId: string;
   profissionalId: string;
   data: any; // Timestamp do início do slot
   aberta: boolean;
@@ -67,6 +74,7 @@ export interface Disponibilidade {
 
 export interface FichaAnamnese {
   id: string;
+  tenantId: string;
   clienteId: string;
   respostas: {
     aspirina5Dias: boolean;
@@ -103,4 +111,20 @@ export interface FichaAnamnese {
   autorizoImagem: boolean;
   createdAt: any;
   updatedAt: any;
+}
+
+export interface Usuario {
+  uid: string;
+  email: string;
+  role: 'admin' | 'gerencia' | 'profissional';
+  tenantId: string;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  plan: 'mensal' | 'anual' | 'trial';
+  status: 'ativo' | 'inativo' | 'pendente';
+  expiresAt: any; // Timestamp
+  createdAt: any; // Timestamp
 }

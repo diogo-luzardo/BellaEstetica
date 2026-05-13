@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Users, 
   Calendar, 
@@ -14,12 +14,16 @@ import {
   X,
   UserCheck,
   TrendingUp,
-  LogIn
+  LogIn,
+  ShieldCheck,
+  Building,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { auth, signInWithGoogle } from './lib/firebase';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
+import { useAuth } from './contexts/AuthContext';
 
 // Import Views
 import DashboardView from './views/DashboardView';
@@ -28,38 +32,38 @@ import ManagementView from './views/ManagementView';
 import ProfessionalsView from './views/ProfessionalsView';
 import AgendaView from './views/AgendaView';
 import WhatsAppView from './views/WhatsAppView';
+import ProfileView from './views/ProfileView';
+import TenantsView from './views/TenantsView';
 
-type View = 'dashboard' | 'clientes' | 'agenda' | 'gestao' | 'profissionais' | 'whatsapp';
+type View = 'dashboard' | 'clientes' | 'agenda' | 'gestao' | 'profissionais' | 'whatsapp' | 'perfil' | 'unidades';
 
 export default function App() {
+  const { user, userProfile, loading } = useAuth();
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
 
   const navigateToAgenda = (profId: string) => {
     setSelectedProfessionalId(profId);
     setCurrentView('agenda');
   };
 
-  const navItems = [
-    { id: 'dashboard', label: 'Monitor', icon: TrendingUp },
-    { id: 'clientes', label: 'Clientes', icon: Users },
-    { id: 'agenda', label: 'Agenda', icon: Calendar },
-    { id: 'profissionais', label: 'Especialistas', icon: UserCheck },
-    { id: 'gestao', label: 'Financeiro/Estoque', icon: DollarSign },
-    { id: 'whatsapp', label: 'WhatsApp Assistant', icon: MessageSquare },
+  const allNavItems = [
+    { id: 'dashboard' as View, label: 'Monitor', icon: TrendingUp },
+    { id: 'clientes' as View, label: 'Clientes', icon: Users },
+    { id: 'agenda' as View, label: 'Agenda', icon: Calendar },
+    { id: 'profissionais' as View, label: 'Especialistas', icon: UserCheck },
+    { id: 'gestao' as View, label: 'Financeiro/Estoque', icon: DollarSign, roles: ['admin', 'gerencia'] },
+    { id: 'unidades' as View, label: 'Unidades / LGPD', icon: Building, roles: ['admin'] },
+    { id: 'perfil' as View, label: 'Minha Conta', icon: User },
+    { id: 'whatsapp' as View, label: 'WhatsApp Assistant', icon: MessageSquare },
   ];
+
+  const navItems = allNavItems.filter(item => {
+    if (!item.roles) return true;
+    return item.roles.includes(userProfile?.role || 'profissional');
+  });
 
   const renderView = () => {
     switch (currentView) {
@@ -69,6 +73,8 @@ export default function App() {
       case 'gestao': return <ManagementView />;
       case 'profissionais': return <ProfessionalsView onVerAgenda={navigateToAgenda} />;
       case 'whatsapp': return <WhatsAppView />;
+      case 'perfil': return <ProfileView />;
+      case 'unidades': return <TenantsView />;
       default: return <DashboardView />;
     }
   };
@@ -268,8 +274,16 @@ export default function App() {
           
           <div className="flex items-center gap-6">
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-xs font-bold text-primary-dark">{user.displayName || 'Administrador'}</span>
-              <span className="text-[10px] text-primary-gold font-bold uppercase tracking-tighter">Sessão Ativa</span>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-bold text-primary-gold uppercase tracking-widest border border-primary-gold/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <ShieldCheck size={10} /> {userProfile?.role === 'gerencia' ? 'Gerência' : userProfile?.role === 'admin' ? 'Support Admin' : 'Profissional'}
+                </span>
+                <span className="text-xs font-bold text-primary-dark">{user?.displayName || 'Usuário'}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-primary-dark/40 font-bold uppercase tracking-tighter">
+                <Building size={10} />
+                <span>Unidade: {userProfile?.tenantId?.replace('tenant_', '') || '---'}</span>
+              </div>
             </div>
             <button className="relative p-2 hover:bg-primary-cream rounded-full transition-colors group">
               {user.photoURL ? (
