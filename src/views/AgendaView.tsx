@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -36,8 +37,12 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Profissional, Cliente, Procedimento, Agendamento, Disponibilidade } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import AnamnesisForm from '../components/AnamnesisForm';
-import { Lock, Unlock, Eye, Settings2, Check } from 'lucide-react';
+import { Lock, Unlock, Eye, Settings2, Check, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+
+const Portal = ({ children }: { children: React.ReactNode; key?: string }) => {
+  return createPortal(children, document.body);
+};
 
 export default function AgendaView({ initialProfId = '' }: { initialProfId?: string }) {
   const { currentTenantId, userProfile } = useAuth();
@@ -77,11 +82,21 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
     procedimentoIds: [] as string[],
     notas: ''
   });
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
   const [selectedAppointment, setSelectedAppointment] = useState<Agendamento | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAnamnesis, setShowAnamnesis] = useState<string | null>(null);
   const [fichaStatus, setFichaStatus] = useState<Record<string, boolean>>({});
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  // Reset confirmation state when modal is closed or changed
+  useEffect(() => {
+    if (!showDetailModal) {
+      setIsConfirmingDelete(false);
+    }
+  }, [showDetailModal]);
 
   useEffect(() => {
     if (!currentTenantId || agendamentos.length === 0) return;
@@ -139,14 +154,12 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   };
 
   const handleDeleteAppointment = async (appId: string) => {
-    if (confirm('Deseja realmente remover este agendamento?')) {
-      try {
-        await deleteDoc(doc(db, 'agendamentos', appId));
-        setShowDetailModal(false);
-        setSelectedAppointment(null);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, 'agendamentos');
-      }
+    try {
+      await deleteDoc(doc(db, 'agendamentos', appId));
+      setShowDetailModal(false);
+      setSelectedAppointment(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'agendamentos');
     }
   };
 
@@ -195,13 +208,28 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   }, [currentTenantId]);
 
   const handleOpenBook = (hour: string, profId: string) => {
+    setFormData({ clienteId: '', procedimentoIds: [], notas: '' });
+    setBookingError(null);
+    setBookingSubmitting(false);
     setSelectedSlot({ hour, profId });
     setShowModal(true);
   };
 
   const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !formData.clienteId || formData.procedimentoIds.length === 0) return;
+    setBookingError(null);
+
+    if (!selectedSlot) return;
+
+    if (!formData.clienteId) {
+      setBookingError("Por favor, selecione um cliente cadastrado.");
+      return;
+    }
+
+    if (formData.procedimentoIds.length === 0) {
+      setBookingError("Por favor, selecione pelo menos um procedimento para o agendamento.");
+      return;
+    }
 
     const selectedProcs = procedimentos.filter(p => formData.procedimentoIds.includes(p.id));
     const totalDuration = selectedProcs.reduce((sum, p) => sum + (p.duracao || 30), 0);
@@ -213,7 +241,7 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
     for (let i = 0; i < slotsNeeded; i++) {
        const currentHour = hours[startIndex + i];
        if (!currentHour) {
-         alert("O procedimento ultrapassa o horário de funcionamento.");
+         setBookingError("O procedimento ultrapassa o horário de funcionamento.");
          return;
        }
        
@@ -221,12 +249,12 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
        const availability = getDisponibilidade(currentHour, selectedSlot.profId);
 
        if (existingApp) {
-         alert(`O horário ${currentHour} já possui um agendamento.`);
+         setBookingError(`O horário ${currentHour} já possui um agendamento.`);
          return;
        }
 
        if (!availability || !availability.aberta) {
-         alert(`O horário ${currentHour} não foi aberto pelo especialista.`);
+         setBookingError(`O horário ${currentHour} não foi aberto pelo especialista.`);
          return;
        }
 
@@ -235,13 +263,14 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
           const disallowed = formData.procedimentoIds.filter(pid => !availability.procedimentosIds?.includes(pid));
           if (disallowed.length > 0) {
             const names = procedimentos.filter(p => disallowed.includes(p.id)).map(p => p.nome).join(', ');
-            alert(`Os procedimentos: ${names} não estão disponíveis para o horário ${currentHour}.`);
+            setBookingError(`O procedimento "${names}" não está disponível para o horário das ${currentHour}.`);
             return;
           }
        }
     }
 
     try {
+      setBookingSubmitting(true);
       const bookDate = new Date(currentDate);
       const [h, m] = selectedSlot.hour.split(':');
       bookDate.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -258,7 +287,10 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
       setFormData({ clienteId: '', procedimentoIds: [], notas: '' });
       setSelectedSlot(null);
     } catch (error) {
+      setBookingError("Ocorreu um erro ao salvar o agendamento no banco de dados.");
       handleFirestoreError(error, OperationType.CREATE, 'agendamentos');
+    } finally {
+      setBookingSubmitting(false);
     }
   };
 
@@ -817,14 +849,15 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
       {/* Booking Modal */}
       <AnimatePresence>
         {showModal && (
-          <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <motion.form 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              onSubmit={handleBook}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-8 space-y-6"
-            >
+          <Portal key="booking-modal">
+            <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+              <motion.form 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                onSubmit={handleBook}
+                className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-8 space-y-6"
+              >
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-serif text-primary-dark font-bold">Novo Agendamento</h3>
@@ -838,6 +871,13 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
                   <X size={20} />
                 </button>
               </div>
+
+              {bookingError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl text-[11px] font-semibold leading-relaxed flex items-center gap-2">
+                  <span className="shrink-0 text-sm">⚠️</span>
+                  <span>{bookingError}</span>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="space-y-1">
@@ -925,27 +965,36 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
               <div className="flex gap-4 pt-4">
                 <button 
                   type="button"
+                  disabled={bookingSubmitting}
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-6 py-4 border border-primary-dark/10 rounded-2xl font-bold hover:bg-primary-cream text-primary-dark transition-colors"
+                  className="flex-1 px-6 py-4 border border-primary-dark/10 rounded-2xl font-bold hover:bg-primary-cream text-primary-dark transition-colors disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 px-6 py-4 bg-primary-gold text-white rounded-2xl font-bold shadow-xl shadow-primary-gold/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
+                  disabled={bookingSubmitting}
+                  className="flex-1 px-6 py-4 bg-primary-gold text-white rounded-2xl font-bold shadow-xl shadow-primary-gold/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  Confirmar Reserva
+                  {bookingSubmitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Salvando...
+                    </>
+                  ) : 'Confirmar Reserva'}
                 </button>
               </div>
             </motion.form>
           </div>
-        )}
-      </AnimatePresence>
+        </Portal>
+      )}
+    </AnimatePresence>
 
       {/* Appointment Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedAppointment && (
-          <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <Portal key="detail-modal">
+            <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1039,21 +1088,45 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
                     </button>
                   )}
                   
-                  <button 
-                    onClick={() => handleDeleteAppointment(selectedAppointment.id)}
-                    className="w-full py-4 text-red-500 font-bold hover:bg-red-50 rounded-2xl transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Trash2 size={18} />
-                    Remover Agendamento
-                  </button>
+                  {isConfirmingDelete ? (
+                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 space-y-3">
+                      <p className="text-xs text-red-800 font-medium text-center">
+                        Tem certeza que deseja remover este agendamento? Esta ação não pode ser desfeita.
+                      </p>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setIsConfirmingDelete(false)}
+                          className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors"
+                        >
+                          Não, manter
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteAppointment(selectedAppointment.id)}
+                          className="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 shadow-sm transition-colors"
+                        >
+                          Sim, remover
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setIsConfirmingDelete(true)}
+                      className="w-full py-4 text-red-500 font-bold hover:bg-red-50 rounded-2xl transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Trash2 size={18} />
+                      Remover Agendamento
+                    </button>
+                  )}
                </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </Portal>
+      )}
+    </AnimatePresence>
 
       {showAvailabilityModal && (
-        <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+        <Portal>
+          <div className="fixed inset-0 bg-primary-dark/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1141,13 +1214,16 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
             </div>
           </motion.div>
         </div>
+        </Portal>
       )}
 
       {showAnamnesis && (
-        <AnamnesisForm 
-          clienteId={showAnamnesis}
-          onClose={() => setShowAnamnesis(null)}
-        />
+        <Portal>
+          <AnamnesisForm 
+            clienteId={showAnamnesis}
+            onClose={() => setShowAnamnesis(null)}
+          />
+        </Portal>
       )}
     </div>
   );

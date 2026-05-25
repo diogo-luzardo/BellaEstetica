@@ -54,7 +54,7 @@ export default function App() {
     { id: 'clientes' as View, label: 'Clientes', icon: Users },
     { id: 'agenda' as View, label: 'Agenda', icon: Calendar },
     { id: 'profissionais' as View, label: 'Especialistas', icon: UserCheck },
-    { id: 'gestao' as View, label: 'Financeiro/Estoque', icon: DollarSign, roles: ['admin', 'gerencia'] },
+    { id: 'gestao' as View, label: 'Gerência / Finanças', icon: DollarSign, roles: ['admin', 'gerencia'] },
     { id: 'unidades' as View, label: 'Unidades / LGPD', icon: Building, roles: ['admin'] },
     { id: 'perfil' as View, label: 'Minha Conta', icon: User },
     { id: 'whatsapp' as View, label: 'WhatsApp Assistant', icon: MessageSquare },

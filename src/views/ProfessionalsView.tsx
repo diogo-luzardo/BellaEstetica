@@ -15,7 +15,8 @@ import {
   TrendingUp,
   ChevronRight,
   User,
-  Calendar
+  Calendar,
+  Check
 } from 'lucide-react';
 import { 
   collection, 
@@ -40,6 +41,7 @@ import { useAuth } from '../contexts/AuthContext';
 export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: string) => void }) {
   const { currentTenantId, userProfile } = useAuth();
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
+  const [procedimentos, setProcedimentos] = useState<Procedimento[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,7 +49,8 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
     nome: '',
     especialidade: '',
     telefone: '',
-    bio: ''
+    bio: '',
+    procedimentoIds: [] as string[]
   });
 
   useEffect(() => {
@@ -70,7 +73,24 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
       handleFirestoreError(error, OperationType.LIST, 'profissionais');
     });
 
-    return () => unsubscribe();
+    const qProc = query(
+      collection(db, 'procedimentos'),
+      where('tenantId', '==', currentTenantId)
+    );
+    const unsubProc = onSnapshot(qProc, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Procedimento[];
+      setProcedimentos(docs.sort((a, b) => a.nome.localeCompare(b.nome)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'procedimentos');
+    });
+
+    return () => {
+      unsubscribe();
+      unsubProc();
+    };
   }, [currentTenantId]);
 
   const handleOpenModal = (prof?: Profissional) => {
@@ -80,11 +100,18 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
         nome: prof.nome,
         especialidade: prof.especialidade,
         telefone: prof.telefone || '',
-        bio: prof.bio || ''
+        bio: prof.bio || '',
+        procedimentoIds: prof.procedimentoIds || []
       });
     } else {
       setEditingId(null);
-      setFormData({ nome: '', especialidade: '', telefone: '', bio: '' });
+      setFormData({ 
+        nome: '', 
+        especialidade: '', 
+        telefone: '', 
+        bio: '',
+        procedimentoIds: []
+      });
     }
     setShowModal(true);
   };
@@ -94,18 +121,30 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
     if (!formData.nome || !formData.especialidade) return;
 
     try {
-      const cleanData = {
-        ...formData,
-        tenantId: currentTenantId!
-      };
-
       if (editingId) {
-        await updateDoc(doc(db, 'profissionais', editingId), cleanData);
+        const updateData = {
+          nome: formData.nome,
+          especialidade: formData.especialidade,
+          telefone: formData.telefone,
+          bio: formData.bio,
+          procedimentoIds: formData.procedimentoIds
+        };
+        await updateDoc(doc(db, 'profissionais', editingId), updateData);
       } else {
+        const cleanData = {
+          ...formData,
+          tenantId: currentTenantId!
+        };
         await addDoc(collection(db, 'profissionais'), cleanData);
       }
       setShowModal(false);
-      setFormData({ nome: '', especialidade: '', telefone: '', bio: '' });
+      setFormData({ 
+        nome: '', 
+        especialidade: '', 
+        telefone: '', 
+        bio: '',
+        procedimentoIds: []
+      });
       setEditingId(null);
     } catch (error) {
       handleFirestoreError(error, editingId ? OperationType.UPDATE : OperationType.CREATE, 'profissionais');
@@ -291,6 +330,30 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
                   <Award size={12} /> Especialidade
                 </p>
                 <p className="text-sm font-medium text-primary-dark">{prof.especialidade}</p>
+
+                <div className="pt-3 border-t border-primary-dark/5 space-y-2">
+                  <p className="text-[10px] font-bold text-primary-gold uppercase tracking-widest flex items-center gap-1">
+                    <Check size={12} strokeWidth={2.5} /> Serviços Habilitados ({prof.procedimentoIds?.length || 0})
+                  </p>
+                  {prof.procedimentoIds && prof.procedimentoIds.length > 0 ? (
+                    <div className="max-h-28 overflow-y-auto pr-1 space-y-1.5 custom-scrollbar">
+                      {prof.procedimentoIds.map(pid => {
+                        const proc = procedimentos.find(p => p.id === pid);
+                        if (!proc) return null;
+                        return (
+                          <div key={pid} className="flex items-center justify-between text-xs py-1.5 px-3 bg-primary-cream/25 hover:bg-primary-cream/40 rounded-xl border border-primary-dark/5 transition-colors">
+                            <span className="font-semibold text-primary-dark truncate max-w-[150px]">{proc.nome}</span>
+                            <span className="text-[10px] text-primary-gold font-bold bg-white px-2 py-0.5 rounded-full shadow-sm">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(proc.preco || 0)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-primary-dark/40 italic py-1">Nenhum serviço habilitado</p>
+                  )}
+                </div>
               </div>
 
               {prof.bio && (
@@ -372,8 +435,54 @@ export default function ProfessionalsView({ onVerAgenda }: { onVerAgenda?: (id: 
                   <textarea 
                     value={formData.bio}
                     onChange={(e) => setFormData({...formData, bio: e.target.value})}
-                    className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-gold/20 h-24 resize-none" 
+                    className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-gold/20 h-20 resize-none" 
                   />
+                </div>
+                
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-xs font-semibold text-primary-dark/40 uppercase tracking-widest block">Serviços Habilitados (Especialidades)</label>
+                  {procedimentos.length === 0 ? (
+                    <p className="text-xs text-primary-dark/40 italic py-2 bg-primary-cream/20 rounded-xl px-3 border border-dashed border-primary-dark/5">
+                      Nenhum procedimento cadastrado no sistema. Cadastre-os primeiro na aba Gerência.
+                    </p>
+                  ) : (
+                    <div className="max-h-44 overflow-y-auto border border-primary-dark/5 bg-primary-cream/25 rounded-2xl p-3 grid grid-cols-1 gap-2 shadow-inner custom-scrollbar">
+                      {procedimentos.map((proc) => {
+                        const isChecked = formData.procedimentoIds.includes(proc.id);
+                        return (
+                          <button
+                            key={proc.id}
+                            type="button"
+                            onClick={() => {
+                              const newIds = isChecked 
+                                ? formData.procedimentoIds.filter(id => id !== proc.id)
+                                : [...formData.procedimentoIds, proc.id];
+                              setFormData(prev => ({ ...prev, procedimentoIds: newIds }));
+                            }}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                              isChecked
+                                ? 'border-primary-gold bg-white text-primary-dark shadow-sm scale-[1.01]'
+                                : 'border-primary-dark/5 bg-white/40 text-primary-dark/60 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
+                                isChecked 
+                                  ? 'bg-primary-gold border-primary-gold text-white' 
+                                  : 'border-primary-dark/20 text-transparent'
+                              }`}>
+                                <Check size={12} strokeWidth={3} />
+                              </div>
+                              <span className="text-xs font-semibold truncate max-w-[200px]">{proc.nome}</span>
+                            </div>
+                            <span className="text-[10px] text-primary-gold font-bold bg-primary-gold/10 px-2.5 py-1 rounded-full whitespace-nowrap">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(proc.preco || 0)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -55,7 +55,7 @@ service cloud.firestore {
       return data.keys().hasAll(['tenantId', 'nome', 'cpf', 'telefone']) 
              && data.tenantId is string
              && data.nome is string && data.nome.size() > 0 && data.nome.size() < 150
-             && data.cpf is string && data.cpf.size() == 11
+             && data.cpf is string && (data.cpf.size() == 11 || data.cpf.size() == 0)
              && data.telefone is string && data.telefone.size() >= 8 && data.telefone.size() < 30
              && (!('email' in data) || (data.email is string))
              && (!('dataNascimento' in data) || (data.dataNascimento is string))
@@ -79,7 +79,8 @@ service cloud.firestore {
              && data.nome is string && data.nome.size() > 0
              && data.especialidade is string && data.especialidade.size() > 0
              && data.telefone is string && data.telefone.size() > 0
-             && (!('bio' in data) || (data.bio is string));
+             && (!('bio' in data) || (data.bio is string))
+             && (!('procedimentoIds' in data) || (data.procedimentoIds is list));
     }
 
     function isValidAgendamento(data) {
@@ -167,7 +168,7 @@ service cloud.firestore {
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidProfissional(incoming()) && isTenantOf(incoming()) && isManager();
       allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProfissional(incoming()) && isTenantOf(incoming())
-                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'telefone', 'bio']);
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'especialidade', 'telefone', 'bio', 'procedimentoIds']);
       allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
 

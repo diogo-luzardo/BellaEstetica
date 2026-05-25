@@ -31,6 +31,7 @@ export interface Profissional {
   especialidade: string;
   telefone: string;
   bio?: string;
+  procedimentoIds?: string[];
 }
 
 export interface Agendamento {

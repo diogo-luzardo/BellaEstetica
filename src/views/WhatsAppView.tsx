@@ -11,7 +11,8 @@ import {
   Sparkles,
   CheckCheck,
   Clock,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -20,12 +21,17 @@ import {
   onSnapshot, 
   addDoc, 
   serverTimestamp,
-  Timestamp 
+  Timestamp,
+  query,
+  where,
+  doc,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { Profissional, Procedimento } from '../types';
-import { GoogleGenAI } from "@google/genai";
+import { Profissional, Procedimento, Cliente, Agendamento, Disponibilidade } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+import { useAuth } from '../contexts/AuthContext';
 
 interface Message {
   id: number;
@@ -36,14 +42,71 @@ interface Message {
 }
 
 export default function WhatsAppView() {
+  const { currentTenantId } = useAuth();
+  
+  // Data State
+  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
+  const [procedimentos, setProcedimentos] = useState<Procedimento[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[]>([]);
+
+  // Simulation State
+  const [selectedSimulatedClientId, setSelectedSimulatedClientId] = useState<string>('novo_coleta');
+  const [customClientName, setCustomClientName] = useState<string>('');
+  const [customClientPhone, setCustomClientPhone] = useState<string>('');
+
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, type: 'system', text: 'Olá! Sou a Bella, sua assistente da BellaEstética. Como posso ajudar com sua beleza hoje? 🏠✨', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [profissionais, setProfissionais] = useState<Profissional[]>([]);
-  const [procedimentos, setProcedimentos] = useState<Procedimento[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const prevClientRef = useRef<string>(selectedSimulatedClientId);
+
+  // Dynamically update greeting message based on selected client (ONLY on manual client switch)
+  useEffect(() => {
+    if (prevClientRef.current !== selectedSimulatedClientId) {
+      prevClientRef.current = selectedSimulatedClientId;
+      if (selectedSimulatedClientId === 'novo_coleta') {
+        setMessages([
+          { 
+            id: 1, 
+            type: 'system', 
+            text: 'Olá! Sou a Bella, sua assistente da BellaEstética. Como posso ajudar com sua beleza hoje? 🏠✨', 
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+          }
+        ]);
+        setCustomClientName('');
+        setCustomClientPhone('');
+      } else {
+        const activeClient = clientes.find(c => c.id === selectedSimulatedClientId);
+        if (activeClient) {
+          setMessages([
+            { 
+              id: 1, 
+              type: 'system', 
+              text: `Olá, ${activeClient.nome}! Sou a Bella, sua assistente da BellaEstética. Que maravilhoso falar com você de novo! 🌸 Deseja agendar um novo horário ou consultar seus agendamentos atuais? ✨`, 
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            }
+          ]);
+        }
+      }
+    } else if (selectedSimulatedClientId !== 'novo_coleta' && messages.length <= 1) {
+      const activeClient = clientes.find(c => c.id === selectedSimulatedClientId);
+      if (activeClient) {
+        setMessages([
+          { 
+            id: 1, 
+            type: 'system', 
+            text: `Olá, ${activeClient.nome}! Sou a Bella, sua assistente da BellaEstética. Que maravilhoso falar com você de novo! 🌸 Deseja agendar um novo horário ou consultar seus agendamentos atuais? ✨`, 
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+          }
+        ]);
+      }
+    }
+  }, [selectedSimulatedClientId, clientes]);
 
   useEffect(() => {
     // Scroll to bottom
@@ -53,47 +116,219 @@ export default function WhatsAppView() {
   }, [messages, isTyping]);
 
   useEffect(() => {
-    const unsubProf = onSnapshot(collection(db, 'profissionais'), (shot) => {
+    if (!currentTenantId) return;
+
+    const qProf = query(collection(db, 'profissionais'), where('tenantId', '==', currentTenantId));
+    const unsubProf = onSnapshot(qProf, (shot) => {
       setProfissionais(shot.docs.map(d => ({ id: d.id, ...d.data() } as Profissional)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'profissionais');
     });
-    const unsubProc = onSnapshot(collection(db, 'procedimentos'), (shot) => {
+
+    const qProc = query(collection(db, 'procedimentos'), where('tenantId', '==', currentTenantId));
+    const unsubProc = onSnapshot(qProc, (shot) => {
       setProcedimentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Procedimento)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'procedimentos');
     });
-    return () => { unsubProf(); unsubProc(); };
-  }, []);
+
+    const qCli = query(collection(db, 'clientes'), where('tenantId', '==', currentTenantId));
+    const unsubCli = onSnapshot(qCli, (shot) => {
+      setClientes(shot.docs.map(d => ({ id: d.id, ...d.data() } as Cliente)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'clientes');
+    });
+
+    const qAgenda = query(collection(db, 'agendamentos'), where('tenantId', '==', currentTenantId));
+    const unsubAgenda = onSnapshot(qAgenda, (shot) => {
+      setAgendamentos(shot.docs.map(d => ({ id: d.id, ...d.data() } as Agendamento)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'agendamentos');
+    });
+
+    const qDisp = query(collection(db, 'disponibilidades'), where('tenantId', '==', currentTenantId));
+    const unsubDisp = onSnapshot(qDisp, (shot) => {
+      setDisponibilidades(shot.docs.map(d => ({ id: d.id, ...d.data() } as Disponibilidade)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'disponibilidades');
+    });
+
+    return () => { 
+      unsubProf(); 
+      unsubProc(); 
+      unsubCli(); 
+      unsubAgenda(); 
+      unsubDisp(); 
+    };
+  }, [currentTenantId]);
 
   const generateAIResponse = async (userText: string) => {
     setIsTyping(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+
+      const finalClientName = selectedSimulatedClientId === 'novo_coleta' 
+        ? (customClientName || 'Cliente Novo') 
+        : (clientes.find(c => c.id === selectedSimulatedClientId)?.nome || 'Cliente Selecionado');
+
+      const finalClientPhone = selectedSimulatedClientId === 'novo_coleta' 
+        ? (customClientPhone || 'Telefone não informado') 
+        : (clientes.find(c => c.id === selectedSimulatedClientId)?.telefone || 'Sem telefone');
       
+      const now = new Date();
+      const currentDayOfWeek = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][now.getDay()];
+      const currentDateString = now.toLocaleDateString('pt-BR');
+      const currentTimeString = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+      // Build context listing existing client appointments dynamically under Firestore
+      const filteredAppointments = selectedSimulatedClientId !== 'novo_coleta'
+        ? agendamentos.filter(a => a.clienteId === selectedSimulatedClientId)
+        : [];
+
+      const formattedAppointments = filteredAppointments.length > 0
+        ? filteredAppointments.map(a => {
+            const appointmentDate = a.data ? (a.data.toDate ? a.data.toDate() : new Date(a.data)) : null;
+            if (!appointmentDate) return '- Sem data';
+            const dateStr = appointmentDate.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const prof = profissionais.find(p => p.id === a.profissionalId)?.nome || 'Especialista';
+            const procs = (a.procedimentoIds || []).map(pid => procedimentos.find(p => p.id === pid)?.nome || 'Procedimento').join(', ');
+            return `- Dia/Hora: ${dateStr}, Profissional: ${prof}, Serviço(s): ${procs} (Status: ${a.status})`;
+          }).join('\n')
+        : 'Nenhum agendamento encontrado para este paciente.';
+
+      // Get open slots (disponibilidades)
+      const openSlots = disponibilidades.filter(d => d.aberta);
+      const formattedSlots = openSlots.length > 0
+        ? openSlots.map(d => {
+            const slotDate = d.data ? (d.data.toDate ? d.data.toDate() : new Date(d.data)) : null;
+            if (!slotDate) return '';
+            const slotStr = slotDate.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            const prof = profissionais.find(p => p.id === d.profissionalId)?.nome || 'Especialista';
+            return `- ${slotStr} com especialista ${prof}`;
+          }).filter(Boolean).join('\n')
+        : 'Sem disponibilidades cadastrais específicas. Use o horário de funcionamento padrão de Segunda a Sábado das 08:00 às 18:30.';
+
       const context = `
         Você é a Bella, assistente virtual de luxo da clínica BellaEstética.
-        Seja extremamente cordial, use alguns emojis e foque em agendamentos.
+        Seja extremamente cordial, use alguns emojis e trate agendamentos com toda precisão estética.
         
-        Sua clínica possui os seguintes PROFISSIONAIS:
-        ${profissionais.map(p => `- ${p.nome} (${p.especialidade})`).join('\n')}
+        Sua clínica possui os seguintes PROFISSIONAIS cadastrados (identifique-os quando o cliente solicitar):
+        ${profissionais.map(p => `- ID: ${p.id}, Nome: ${p.nome} (Especialidade: ${p.especialidade})`).join('\n')}
         
-        E os seguintes PROCEDIMENTOS:
-        ${procedimentos.map(p => `- ${p.nome}: R$ ${p.preco} (Duração: ${p.duracao}min)`).join('\n')}
+        E os seguintes PROCEDIMENTOS/SERVIÇOS que a clínica realiza:
+        ${procedimentos.map(p => `- ID: ${p.id}, Nome: ${p.nome}, Preço: R$ ${p.preco}, Duração: ${p.duracao}min`).join('\n')}
         
-        REGRAS:
-        1. Se o cliente demonstrar interesse em algo, explique brevemente e ofereça um especialista.
-        2. Se ele quiser agendar, peça para informar a data e o especialista.
-        3. Se ele confirmar um agendamento, responda com uma frase que contenha obrigatoriamente a palavra "CONFIRMADO" seguida dos detalhes (Data, Serviço, Profissional).
+        ---
+        DADOS DE DATA E HORA DE HOJE (Crucial para identificar "amanhã", "esta semana", etc.):
+        Hoje é: ${currentDayOfWeek}, ${currentDateString}.
+        Hora atual: ${currentTimeString}.
         
-        Histórico da conversa:
-        ${messages.map(m => `${m.type === 'client' ? 'Cliente' : 'Bella'}: ${m.text}`).join('\n')}
-        Cliente agora disse: ${userText}
+        ---
+        DADOS DO PACIENTE ATUAL DO ATENDIMENTO WHATSAPP:
+        - Nome atual: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientName ? customClientName : 'Não cadastrado nos dados da IA/Pergunte') : finalClientName}
+        - Telefone atual: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientPhone ? customClientPhone : 'Não cadastrado nos dados da IA/Pergunte') : finalClientPhone}
+        - Status do cliente: ${selectedSimulatedClientId === 'novo_coleta' ? 'NOVO PACIENTE (Simulado)' : 'PACIENTE EXISTENTE NO SISTEMA'}
+
+        ---
+        FICHAS DE AGENDAMENTOS DO PACIENTE SELECIONADO:
+        ${formattedAppointments}
+        
+        ---
+        HORÁRIOS DE DISPONIBILIDADE DO EXPEDIENTE (Disponibilidades abertas de especialistas):
+        ${formattedSlots}
+
+        DIRETRIZES E REGRAS CRÍTICAS DE CONVERSAÇÃO (SIGA À RISCA):
+        1. MERA SONDAGEM / PERGUNTAS DE DISPONIBILIDADE: Se o paciente apenas perguntar se há horários ativos, se há agenda de Botox para hoje, preços, ou se estiver tirando qualquer dúvida, responda acolhedoramente informando suas opções de horários de folga ou funcionamento comercial. Mantenha o objeto "booking" como null! NÃO PREENCHA o objeto "booking" para perguntas ou sondagens de horários.
+        2. COLETAR DADOS PARA NOVOS PACIENTES: Para novos pacientes (onde o Nome atual ou Telefone atual nos dados acima constam como 'Não cadastrado nos dados da IA/Pergunte'), você é terminantemente PROIBIDA de preencher o objeto "booking" com dados inventados ou genéricos. Você DEVE primeiro solicitar educadamente o Nome Completo e o Telefone de contato dele. Enquanto ele não os fornecer formalmente no chat, mantenha "booking" obrigatoriamente como null na sua resposta JSON.
+        3. QUANDO AGENDAR (REQUISITOS): Você SÓ PODERÁ preencher e retornar o objeto "booking" (não-null) quando se cumprirem TODOS os requisitos abaixo cumulativamente:
+           - O paciente der uma instrução explícita de confirmação de agendamento (ex: "pode agendar", "quero marcar", "confirma para mim para hoje às 14:30 com tal profissional").
+           - Você possuir o Nome Completo do paciente.
+           - Você possuir o Telefone do paciente.
+           - Você possuir um dia e horário específicos acordados.
+           - O serviço desejado constar na lista de PROCEDIMENTOS permitidos.
+           - O profissional preferido estar selecionado.
+           Se faltar qualquer um desses itens, mantenha "booking" como null e solicite amigavelmente o dado que falta em sua resposta ("reply").
+        4. Se preencher "booking" (somente nas condições perfeitas descritas na Regra 3), garanta que:
+           - "date" seja no formato YYYY-MM-DD (converta termos como "hoje" para ${currentDateString} convertido para YYYY-MM-DD, "amanhã" ou "segunda que vem" para datas reais com base no dia de hoje ${currentDateString}).
+           - "time" seja no formato HH:MM (ex: "18:00").
+           - "profissionalId" seja o ID real do profissional escolhido (ex: "${profissionais[0]?.id || ''}").
+           - "procedimentoIds" seja uma lista contendo os IDs reais correspondentes (ex: ["${procedimentos[0]?.id || ''}"]).
+           - "clientName" contendo o nome fornecido pelo paciente.
+           - "clientPhone" contendo o telefone do paciente.
+
+        Seu retorno DEVE ser obrigatoriamente um objeto JSON com o formato exato:
+        {
+          "reply": "Sua resposta com emojis para o painel do WhatsApp",
+          "booking": null ou {
+            "date": "YYYY-MM-DD",
+            "time": "HH:MM",
+            "profissionalId": "ID_DO_PROFISSIONAL",
+            "procedimentoIds": ["ID_DO_PROCEDIMENTO"],
+            "clientName": "NOME_DO_CLIENTE",
+            "clientPhone": "TELEFONE_DO_CLIENTE"
+          }
+        }
       `;
 
       const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: context
+        model: "gemini-3.5-flash",
+        contents: context,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              reply: { type: Type.STRING },
+              booking: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING },
+                  time: { type: Type.STRING },
+                  profissionalId: { type: Type.STRING },
+                  procedimentoIds: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
+                  clientName: { type: Type.STRING },
+                  clientPhone: { type: Type.STRING }
+                },
+                required: ["date", "time", "profissionalId", "procedimentoIds", "clientName", "clientPhone"]
+              }
+            },
+            required: ["reply"]
+          }
+        }
       });
 
-      const responseText = result.text || "Desculpe, tive um probleminha. Pode repetir?";
-      
+      let parsedResponse: { reply: string; booking: any } = { 
+        reply: "Desculpe, tive um probleminha ao processar minha resposta. Pode repetir?", 
+        booking: null 
+      };
+
+      try {
+        const textToParse = result.text || '';
+        parsedResponse = JSON.parse(textToParse);
+      } catch (parseError) {
+        console.error("Erro ao ler resposta JSON do Gemini:", parseError);
+        let cleanText = (result.text || '').trim();
+        if (cleanText.startsWith('```json')) {
+          cleanText = cleanText.substring(7);
+        }
+        if (cleanText.endsWith('```')) {
+          cleanText = cleanText.substring(0, cleanText.length - 3);
+        }
+        try {
+          parsedResponse = JSON.parse(cleanText.trim());
+        } catch (e) {
+          parsedResponse = {
+            reply: result.text || "Desculpe, tive um contratempo. Vamos tentar novamente?",
+            booking: null
+          };
+        }
+      }
+
+      const responseText = parsedResponse.reply;
+
       const aiMsg: Message = {
         id: Date.now(),
         type: 'system',
@@ -104,16 +339,89 @@ export default function WhatsAppView() {
 
       setMessages(prev => [...prev, aiMsg]);
 
-      // Detect "CONFIRMADO" to simulate backend booking
-      if (responseText.toUpperCase().includes('CONFIRMADO')) {
-        // Here we could extract data and save to Firestore, but for simulation let's just log it
-        console.log('Agendamento detectado pela IA!');
+      // Handle actual Firestore database insert if booking is confirmed
+      if (parsedResponse.booking) {
+        const { date, time, profissionalId, procedimentoIds, clientName, clientPhone } = parsedResponse.booking;
+        
+        let targetClientId = selectedSimulatedClientId;
+
+        // If it's a new simulated client, let's create it in database or fetch existing matching client
+        if (selectedSimulatedClientId === 'novo_coleta') {
+          const rawPhone = clientPhone.replace(/\D/g, '');
+          const existingClient = clientes.find(c => c.telefone.replace(/\D/g, '') === rawPhone);
+
+          if (existingClient) {
+            targetClientId = existingClient.id;
+          } else {
+            console.log("Criando novo cliente no banco:", clientName, clientPhone);
+            const newClientRef = await addDoc(collection(db, 'clientes'), {
+              tenantId: currentTenantId!,
+              nome: clientName,
+              telefone: clientPhone,
+              cpf: '',
+              email: '',
+              createdAt: serverTimestamp()
+            });
+            targetClientId = newClientRef.id;
+
+            // Save variables locally
+            setCustomClientName(clientName);
+            setCustomClientPhone(clientPhone);
+          }
+        }
+
+        // Add Agendamento directly to Firestore
+        const [year, month, day] = date.split('-').map((n: string) => parseInt(n));
+        const [hours, minutes] = time.split(':').map((n: string) => parseInt(n));
+        const appointmentDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
+
+        console.log("Criando agendamento real no banco de dados para data:", appointmentDate);
+        await addDoc(collection(db, 'agendamentos'), {
+          tenantId: currentTenantId!,
+          clienteId: targetClientId,
+          profissionalId,
+          procedimentoIds,
+          data: Timestamp.fromDate(appointmentDate),
+          status: 'confirmado',
+          notas: 'Consulta agendada de forma automática pela Assistente de IA Bella'
+        });
+
+        // Add a nice system notification in chat that booking was created!
+        setMessages(prev => [
+          ...prev, 
+          {
+            id: Date.now() + 1,
+            type: 'system',
+            text: `📢 [SISTEMA]: Agendamento registrado com sucesso no banco de dados! Dia ${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')} às ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
       }
 
     } catch (error) {
       console.error("Erro AI:", error);
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  const handleDeleteAppointment = async (appId: string) => {
+    if (confirm('Deseja realmente remover este agendamento?')) {
+      try {
+        await deleteDoc(doc(db, 'agendamentos', appId));
+        // Add a local notification that booking was deleted
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            type: 'system',
+            text: `📢 [SISTEMA]: Agendamento excluído do banco de dados com sucesso.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, 'agendamentos');
+      }
     }
   };
 
@@ -144,13 +452,13 @@ export default function WhatsAppView() {
             <h3 className="text-xl font-serif font-bold">IA de Agendamento</h3>
           </div>
           <p className="text-sm text-primary-dark/60 leading-relaxed">
-            Este módulo utiliza a IA do Gemini para simular conversas reais no WhatsApp.
+            Este módulo utiliza a IA do Gemini para simular conversas reais no WhatsApp com sincronização total do Firestore.
           </p>
           <ul className="mt-4 space-y-3">
             {[
               'Verifica disponibilidade em tempo real',
               'Sugere horários com base na especialidade',
-              'Confirma agendamentos automaticamente',
+              'Confirma agendamentos e grava no banco',
               'Responde dúvidas sobre procedimentos'
             ].map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-xs text-primary-dark/80">
@@ -159,6 +467,86 @@ export default function WhatsAppView() {
               </li>
             ))}
           </ul>
+        </div>
+
+        {/* Seletor do Simulador de Cliente */}
+        <div className="bg-white p-6 rounded-2xl border border-primary-dark/5 shadow-sm space-y-4">
+          <div className="flex items-center gap-3 text-primary-gold">
+            <User size={20} />
+            <h3 className="text-base font-serif font-bold">Simular Qual Paciente?</h3>
+          </div>
+          <p className="text-xs text-primary-dark/60">
+            Escolha um paciente cadastrado para simular a conversa ou selecione "Novo Paciente" para deixar a IA capturar o cadastro.
+          </p>
+
+          <div>
+            <label className="block text-[10px] font-bold text-primary-dark/60 uppercase tracking-wider mb-1">Paciente Simulado</label>
+            <select
+              value={selectedSimulatedClientId}
+              onChange={(e) => setSelectedSimulatedClientId(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-primary-dark focus:outline-none focus:ring-1 focus:ring-primary-gold"
+            >
+              <option value="novo_coleta">👤 Simular Novo Paciente (Coleta de Dados por IA)</option>
+              {clientes.map(c => (
+                <option key={c.id} value={c.id}>
+                  👥 {c.nome} ({c.telefone})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedSimulatedClientId === 'novo_coleta' ? (
+            <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg text-xs space-y-1 text-amber-800">
+              <p className="font-semibold">Modo Coleta Ativo ✨</p>
+              <p className="opacity-85 leading-relaxed">
+                Neste modo, a IA Bella agirá sem dados prévios. Ela vai solicitar o <b>Nome Completo</b> e o <b>Telefone</b> do paciente durante a conversa. Assim que confirmado, o paciente será cadastrado no banco automaticamente e o agendamento criado!
+              </p>
+            </div>
+          ) : (
+            <div className="bg-primary-gold/5 border border-primary-gold/15 p-3 rounded-lg text-xs space-y-2">
+              <p className="font-semibold text-primary-gold">Paciente Cadastrado Ativo ✔️</p>
+              <div className="space-y-1 text-primary-dark/80">
+                <p><b>Nome:</b> {clientes.find(c => c.id === selectedSimulatedClientId)?.nome}</p>
+                <p><b>Telefone:</b> {clientes.find(c => c.id === selectedSimulatedClientId)?.telefone}</p>
+              </div>
+              
+              <div className="border-t border-primary-gold/10 pt-2 mt-2 font-sans">
+                <p className="font-semibold text-[10px] uppercase tracking-wider text-primary-dark/60 mb-1">
+                  Agenda deste Paciente:
+                </p>
+                {agendamentos.filter(a => a.clienteId === selectedSimulatedClientId).length > 0 ? (
+                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                    {agendamentos
+                      .filter(a => a.clienteId === selectedSimulatedClientId)
+                      .map((a, i) => {
+                        const date = a.data ? (a.data.toDate ? a.data.toDate() : new Date(a.data)) : null;
+                        const dateString = date ? date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Sem data';
+                        const prof = profissionais.find(p => p.id === a.profissionalId)?.nome || 'Especialista';
+                        return (
+                          <div key={a.id || i} className="bg-white p-1.5 rounded border border-primary-gold/10 text-[10px] flex justify-between items-center gap-2">
+                            <span className="truncate">📅 {dateString} ({prof})</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="bg-green-100 text-green-800 px-1 rounded uppercase font-bold text-[8px]">
+                                {a.status}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteAppointment(a.id)}
+                                className="text-red-500 hover:text-red-700 p-0.5 rounded hover:bg-red-50 transition-colors"
+                                title="Excluir Agendamento"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-primary-dark/40 italic">Nenhum agendamento ativo.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-primary-dark text-white p-6 rounded-2xl shadow-xl shadow-primary-dark/20">
@@ -178,8 +566,16 @@ export default function WhatsAppView() {
             <User size={24} />
           </div>
           <div>
-            <p className="font-semibold text-sm">Cliente Teste</p>
-            <p className="text-[10px] opacity-70">Online</p>
+            <p className="font-semibold text-sm">
+              {selectedSimulatedClientId === 'novo_coleta' 
+                ? (customClientName || 'Paciente Novo') 
+                : (clientes.find(c => c.id === selectedSimulatedClientId)?.nome || 'Paciente Selecionado')}
+            </p>
+            <p className="text-[10px] opacity-70">
+              {selectedSimulatedClientId === 'novo_coleta' 
+                ? (customClientPhone || 'Online') 
+                : (clientes.find(c => c.id === selectedSimulatedClientId)?.telefone || 'Online')}
+            </p>
           </div>
         </div>
 

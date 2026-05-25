@@ -278,90 +278,107 @@ export default function ManagementView() {
           <table className="w-full text-left border-collapse min-w-[600px]">
             <thead>
               <tr className="bg-primary-cream/30 text-xs uppercase tracking-widest text-primary-dark/40">
-              <th className="px-6 py-4 font-semibold">Descrição</th>
-              <th className="px-6 py-4 font-semibold">Categoria</th>
-              <th className="px-6 py-4 font-semibold">Custo/Investimento</th>
-              <th className="px-6 py-4 font-semibold">Preço de Venda</th>
-              <th className="px-6 py-4 font-semibold text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-primary-dark/5">
-            {loading ? (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Carregando...</td></tr>
-            ) : tab === 'procedimentos' ? (
-              procedimentos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
-                  <td className="px-6 py-4 font-medium">
-                    {item.nome}
-                    <div className="text-[10px] text-primary-dark/40 flex items-center gap-1">
-                      <Clock size={10} /> {item.duracao} min
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
-                  <td className="px-6 py-4 text-sm text-red-500">{formatCurrency(item.custo)}</td>
-                  <td className="px-6 py-4 text-green-600 font-semibold">{formatCurrency(item.preco)}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
-                        className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
-                        className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            ) : tab === 'estoque' ? (
-              produtos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
-                  <td className="px-6 py-4 font-medium">
-                    {item.nome}
-                    {item.quantidade <= item.alertaMinimo && (
-                      <div className="text-[10px] text-red-500 font-bold flex items-center gap-1 mt-1">
-                        <AlertTriangle size={10} /> Estoque Baixo
+                {tab === 'procedimentos' ? (
+                  <>
+                    <th className="px-6 py-4 font-semibold">Descrição</th>
+                    <th className="px-6 py-4 font-semibold">Categoria</th>
+                    <th className="px-6 py-4 font-semibold">Custo de Material</th>
+                    <th className="px-6 py-4 font-semibold">Preço de Venda</th>
+                  </>
+                ) : tab === 'estoque' ? (
+                  <>
+                    <th className="px-6 py-4 font-semibold">Nome do Produto</th>
+                    <th className="px-6 py-4 font-semibold">Categoria</th>
+                    <th className="px-6 py-4 font-semibold">Quantidade</th>
+                    <th className="px-6 py-4 font-semibold">Valor Unitário</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-6 py-4 font-semibold">Descrição da Despesa</th>
+                    <th className="px-6 py-4 font-semibold">Categoria</th>
+                    <th className="px-6 py-4 font-semibold">Valor Pago</th>
+                    <th className="px-6 py-4 font-semibold">Data de Lançamento</th>
+                  </>
+                )}
+                <th className="px-6 py-4 font-semibold text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-primary-dark/5">
+              {loading ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Carregando...</td></tr>
+              ) : tab === 'procedimentos' ? (
+                procedimentos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 font-medium">
+                      {item.nome}
+                      <div className="text-[10px] text-primary-dark/40 flex items-center gap-1">
+                        <Clock size={10} /> {item.duracao} min
                       </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
-                  <td className={`px-6 py-4 text-sm font-bold ${item.quantidade <= item.alertaMinimo ? 'text-red-500' : 'text-primary-gold'}`}>
-                    {item.quantidade} un
-                  </td>
-                  <td className="px-6 py-4 text-sm text-primary-dark/60">{formatCurrency(item.valorUnitario)}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
-                        className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
-                        className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            ) : tab === 'custos' ? (
-              custos.filter(c => (c.descricao || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
-                  <td className="px-6 py-4 font-medium">{item.descricao}</td>
-                  <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
-                  <td className="px-6 py-4 text-sm text-red-500">{formatCurrency(item.valor)}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-4">
-                      <span className="text-xs text-primary-dark/40">{item.data}</span>
-                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    </td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
+                    <td className="px-6 py-4 text-sm text-red-500">{formatCurrency(item.custo)}</td>
+                    <td className="px-6 py-4 text-green-600 font-semibold">{formatCurrency(item.preco)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
+                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
+                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : tab === 'estoque' ? (
+                produtos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 font-medium">
+                      {item.nome}
+                      {item.quantidade <= item.alertaMinimo && (
+                        <div className="text-[10px] text-red-500 font-bold flex items-center gap-1 mt-1">
+                          <AlertTriangle size={10} /> Estoque Baixo
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
+                    <td className={`px-6 py-4 text-sm font-bold ${item.quantidade <= item.alertaMinimo ? 'text-red-500' : 'text-primary-gold'}`}>
+                      {item.quantidade} un
+                    </td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{formatCurrency(item.valorUnitario)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
+                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
+                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : tab === 'custos' ? (
+                custos.filter(c => (c.descricao || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 font-medium">{item.descricao}</td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
+                    <td className="px-6 py-4 text-sm text-red-500 font-medium">{formatCurrency(item.valor)}</td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{item.data}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
                           className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
@@ -375,14 +392,13 @@ export default function ManagementView() {
                           <Trash2 size={14} />
                         </button>
                       </div>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Módulo de estoque em desenvolvimento...</td></tr>
-            )}
-          </tbody>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Módulo de estoque em desenvolvimento...</td></tr>
+              )}
+            </tbody>
         </table>
       </div>
     </div>

@@ -45,7 +45,8 @@ const blueprint = {
         nome: { type: "string" },
         especialidade: { type: "string" },
         telefone: { type: "string" },
-        bio: { type: "string" }
+        bio: { type: "string" },
+        procedimentoIds: { type: "array", items: { type: "string" }, description: "Procedimentos/serviços que o profissional realiza" }
       },
       required: ["tenantId", "nome", "especialidade", "telefone"]
     },
