@@ -43,7 +43,17 @@ export interface Agendamento {
   data: any; // timestamp
   status: 'confirmado' | 'pendente' | 'cancelado' | 'concluido';
   notas?: string;
+  atendenteId?: string;
 }
+
+export interface Atendente {
+  id: string;
+  tenantId: string;
+  nome: string;
+  telefone: string;
+  percentualComissao: number;
+}
+
 
 export interface Custo {
   id: string;

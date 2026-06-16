@@ -496,22 +496,21 @@ export default function WhatsAppView() {
   };
 
   const handleDeleteAppointment = async (appId: string) => {
-    if (confirm('Deseja realmente remover este agendamento?')) {
-      try {
-        await deleteDoc(doc(db, 'agendamentos', appId));
-        // Add a local notification that booking was deleted
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            type: 'system',
-            text: `📢 [SISTEMA]: Agendamento excluído do banco de dados com sucesso.`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, 'agendamentos');
-      }
+    // Removed confirm() as it blocks in iframes
+    try {
+      await deleteDoc(doc(db, 'agendamentos', appId));
+      // Add a local notification that booking was deleted
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          type: 'system',
+          text: `📢 [SISTEMA]: Agendamento excluído do banco de dados com sucesso.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, 'agendamentos');
     }
   };
 

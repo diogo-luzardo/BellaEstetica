@@ -34,10 +34,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { Profissional, Cliente, Procedimento, Agendamento, Disponibilidade } from '../types';
+import { Profissional, Cliente, Procedimento, Agendamento, Disponibilidade, Atendente } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import AnamnesisForm from '../components/AnamnesisForm';
-import { Lock, Unlock, Eye, Settings2, Check, Loader2 } from 'lucide-react';
+import { Lock, Unlock, Eye, Settings2, Check, Loader2, Headset } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Portal = ({ children }: { children: React.ReactNode; key?: string }) => {
@@ -58,6 +58,7 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   const [procedimentos, setProcedimentos] = useState<Procedimento[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[]>([]);
+  const [atendentes, setAtendentes] = useState<Atendente[]>([]);
   const [loading, setLoading] = useState(true);
   const [isManagementMode, setIsManagementMode] = useState(false);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState<{ hour: string, profId: string } | null>(null);
@@ -80,7 +81,8 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
   const [formData, setFormData] = useState({
     clienteId: '',
     procedimentoIds: [] as string[],
-    notas: ''
+    notas: '',
+    atendenteId: ''
   });
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
@@ -203,12 +205,19 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
       },
       (error) => handleFirestoreError(error, OperationType.LIST, 'disponibilidades')
     );
+    const unsubAtendentes = onSnapshot(
+      query(collection(db, 'atendentes'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        setAtendentes(shot.docs.map(d => ({ id: d.id, ...d.data() } as Atendente)));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'atendentes')
+    );
 
-    return () => { unsubProf(); unsubCli(); unsubProc(); unsubAgenda(); unsubDisp(); };
+    return () => { unsubProf(); unsubCli(); unsubProc(); unsubAgenda(); unsubDisp(); unsubAtendentes(); };
   }, [currentTenantId]);
 
   const handleOpenBook = (hour: string, profId: string) => {
-    setFormData({ clienteId: '', procedimentoIds: [], notas: '' });
+    setFormData({ clienteId: '', procedimentoIds: [], notas: '', atendenteId: '' });
     setBookingError(null);
     setBookingSubmitting(false);
     setSelectedSlot({ hour, profId });
@@ -275,16 +284,22 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
       const [h, m] = selectedSlot.hour.split(':');
       bookDate.setHours(parseInt(h), parseInt(m), 0, 0);
 
-      await addDoc(collection(db, 'agendamentos'), {
+      const agendamentoData: any = {
         ...formData,
         tenantId: currentTenantId,
         profissionalId: selectedSlot.profId,
         data: Timestamp.fromDate(bookDate),
         status: 'confirmado'
-      });
+      };
+      
+      if (!agendamentoData.atendenteId) {
+        delete agendamentoData.atendenteId;
+      }
+
+      await addDoc(collection(db, 'agendamentos'), agendamentoData);
 
       setShowModal(false);
-      setFormData({ clienteId: '', procedimentoIds: [], notas: '' });
+      setFormData({ clienteId: '', procedimentoIds: [], notas: '', atendenteId: '' });
       setSelectedSlot(null);
     } catch (error) {
       setBookingError("Ocorreu um erro ao salvar o agendamento no banco de dados.");
@@ -960,6 +975,22 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
                     placeholder="Ex: Alérgica a algum produto..."
                   />
                 </div>
+
+                {atendentes.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-primary-dark/40 uppercase tracking-widest flex items-center gap-2">
+                      <Headset size={12} /> Marcado por Atendente (Comissão)
+                    </label>
+                    <select 
+                      value={formData.atendenteId}
+                      onChange={(e) => setFormData({...formData, atendenteId: e.target.value})}
+                      className="w-full px-4 py-3 bg-primary-cream/40 border border-primary-dark/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-gold/20 appearance-none font-medium"
+                    >
+                      <option value="">Nenhuma (Sem comissão)</option>
+                      {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome} ({a.percentualComissao}%)</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4 pt-4">
@@ -1041,6 +1072,20 @@ export default function AgendaView({ initialProfId = '' }: { initialProfId?: str
                         </p>
                      </div>
                   </div>
+
+                  {selectedAppointment.atendenteId && (
+                     <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-primary-gold shadow-sm">
+                           <Headset size={14} />
+                        </div>
+                        <div>
+                           <p className="text-[10px] text-primary-dark/40 font-bold uppercase tracking-widest">Agendado por (Atendente)</p>
+                           <p className="text-sm font-bold text-primary-dark">
+                              {atendentes.find(a => a.id === selectedAppointment.atendenteId)?.nome || 'Atendente apagada'}
+                           </p>
+                        </div>
+                     </div>
+                  )}
                </div>
 
                <div className="space-y-4">

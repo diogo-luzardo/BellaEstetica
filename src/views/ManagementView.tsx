@@ -14,7 +14,8 @@ import {
   Scissors,
   DollarSign,
   X,
-  Clock
+  Clock,
+  Headset
 } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import { 
@@ -30,20 +31,21 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
-import { Procedimento, Custo, Produto } from '../types';
+import { Procedimento, Custo, Produto, Atendente } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Edit2, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function ManagementView() {
   const { currentTenantId, userProfile } = useAuth();
-  const [tab, setTab] = useState<'procedimentos' | 'estoque' | 'custos'>('procedimentos');
+  const [tab, setTab] = useState<'procedimentos' | 'estoque' | 'custos' | 'atendentes'>('procedimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
   // Data State
   const [procedimentos, setProcedimentos] = useState<Procedimento[]>([]);
   const [custos, setCustos] = useState<Custo[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [atendentes, setAtendentes] = useState<Atendente[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal State
@@ -69,6 +71,13 @@ export default function ManagementView() {
     categoria: '',
     alertaMinimo: ''
   });
+  const [atendenteForm, setAtendenteForm] = useState({
+    nome: '',
+    telefone: '',
+    percentualComissao: '5'
+  });
+
+  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
     if (!currentTenantId) return;
@@ -99,7 +108,15 @@ export default function ManagementView() {
       },
       (error) => handleFirestoreError(error, OperationType.LIST, 'produtos')
     );
-    return () => { unsubProc(); unsubCusto(); unsubProd(); };
+    const unsubAtendentes = onSnapshot(
+      query(collection(db, 'atendentes'), where('tenantId', '==', currentTenantId)), 
+      (shot) => {
+        const data = shot.docs.map(d => ({ id: d.id, ...d.data() } as Atendente));
+        setAtendentes(data.sort((a, b) => (a.nome || '').localeCompare(b.nome || '')));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'atendentes')
+    );
+    return () => { unsubProc(); unsubCusto(); unsubProd(); unsubAtendentes(); };
   }, [currentTenantId]);
 
   const handleOpenModal = (item?: any) => {
@@ -131,12 +148,20 @@ export default function ManagementView() {
           categoria: pr.categoria || '',
           alertaMinimo: (pr.alertaMinimo ?? 0).toString()
         });
+      } else if (tab === 'atendentes') {
+        const at = item as Atendente;
+        setAtendenteForm({
+          nome: at.nome || '',
+          telefone: at.telefone || '',
+          percentualComissao: (at.percentualComissao ?? 5).toString()
+        });
       }
     } else {
       setEditingId(null);
       setProcForm({ nome: '', preco: '', custo: '', duracao: '', categoria: '' });
       setCustoForm({ descricao: '', valor: '', data: new Date().toISOString().split('T')[0], categoria: '' });
       setProdForm({ nome: '', quantidade: '', valorUnitario: '', categoria: '', alertaMinimo: '5' });
+      setAtendenteForm({ nome: '', telefone: '', percentualComissao: '5' });
     }
     setShowModal(true);
   };
@@ -210,30 +235,58 @@ export default function ManagementView() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (confirm(`Deseja realmente excluir "${name}"?`)) {
-      try {
-        await deleteDoc(doc(db, tab === 'procedimentos' ? 'procedimentos' : tab === 'estoque' ? 'produtos' : 'custos', id));
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, tab);
+  const handleSaveAtendente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const data = {
+        ...atendenteForm,
+        tenantId: currentTenantId!,
+        percentualComissao: parseFloat(atendenteForm.percentualComissao)
+      };
+
+      if (editingId) {
+        await updateDoc(doc(db, 'atendentes', editingId), data);
+      } else {
+        await addDoc(collection(db, 'atendentes'), data);
       }
+      setShowModal(false);
+      setEditingId(null);
+      setAtendenteForm({ nome: '', telefone: '', percentualComissao: '5' });
+    } catch (error) {
+      handleFirestoreError(error, editingId ? OperationType.UPDATE : OperationType.CREATE, 'atendentes');
+    }
+  };
+
+  const handleDelete = (id: string, name: string) => {
+    setDeleteConfirm({ id, name });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      const coll = tab === 'procedimentos' ? 'procedimentos' : tab === 'estoque' ? 'produtos' : tab === 'atendentes' ? 'atendentes' : 'custos';
+      await deleteDoc(doc(db, coll, deleteConfirm.id));
+      setDeleteConfirm(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, tab);
     }
   };
 
   return (
     <div className="space-y-6">
       {/* Header com Tabs */}
-      <div className="border-b border-primary-dark/5 flex items-center justify-between">
-        <div className="flex gap-8">
+      <div className="border-b border-primary-dark/5 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="flex gap-4 overflow-x-auto w-full no-scrollbar pb-2 xl:pb-0">
           {[
             { id: 'procedimentos', label: 'Procedimentos', icon: Scissors },
             { id: 'estoque', label: 'Produtos/Estoque', icon: Package },
             { id: 'custos', label: 'Custos/Despesas', icon: DollarSign },
+            { id: 'atendentes', label: 'Atendentes', icon: Headset },
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => setTab(item.id as any)}
-              className={`pb-4 text-sm font-medium transition-all flex items-center gap-2 ${
+              className={`pb-2 xl:pb-4 text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap ${
                 tab === item.id 
                   ? 'border-b-2 border-primary-gold text-primary-gold' 
                   : 'text-primary-dark/40 hover:text-primary-dark'
@@ -246,10 +299,10 @@ export default function ManagementView() {
         </div>
         <button 
           onClick={() => handleOpenModal()}
-          className="bg-primary-gold text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 mb-2 hover:bg-primary-gold/90 transition-colors"
+          className="bg-primary-gold text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-2 w-full xl:w-auto hover:bg-primary-gold/90 transition-colors"
         >
           <Plus size={16} />
-          Novo {tab === 'procedimentos' ? 'Procedimento' : tab === 'estoque' ? 'Produto' : 'Custo'}
+          Novo {tab === 'procedimentos' ? 'Procedimento' : tab === 'estoque' ? 'Produto' : tab === 'atendentes' ? 'Atendente' : 'Custo'}
         </button>
       </div>
 
@@ -292,6 +345,12 @@ export default function ManagementView() {
                     <th className="px-6 py-4 font-semibold">Quantidade</th>
                     <th className="px-6 py-4 font-semibold">Valor Unitário</th>
                   </>
+                ) : tab === 'atendentes' ? (
+                  <>
+                    <th className="px-6 py-4 font-semibold">Nome</th>
+                    <th className="px-6 py-4 font-semibold">Telefone</th>
+                    <th className="px-6 py-4 font-semibold">Comissão (%)</th>
+                  </>
                 ) : (
                   <>
                     <th className="px-6 py-4 font-semibold">Descrição da Despesa</th>
@@ -300,7 +359,6 @@ export default function ManagementView() {
                     <th className="px-6 py-4 font-semibold">Data de Lançamento</th>
                   </>
                 )}
-                <th className="px-6 py-4 font-semibold text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-primary-dark/5">
@@ -308,7 +366,7 @@ export default function ManagementView() {
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Carregando...</td></tr>
               ) : tab === 'procedimentos' ? (
                 procedimentos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                  <tr key={item.id} onClick={() => handleOpenModal(item)} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                     <td className="px-6 py-4 font-medium">
                       {item.nome}
                       <div className="text-[10px] text-primary-dark/40 flex items-center gap-1">
@@ -318,27 +376,11 @@ export default function ManagementView() {
                     <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
                     <td className="px-6 py-4 text-sm text-red-500">{formatCurrency(item.custo)}</td>
                     <td className="px-6 py-4 text-green-600 font-semibold">{formatCurrency(item.preco)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))
               ) : tab === 'estoque' ? (
                 produtos.filter(p => (p.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                  <tr key={item.id} onClick={() => handleOpenModal(item)} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                     <td className="px-6 py-4 font-medium">
                       {item.nome}
                       {item.quantidade <= item.alertaMinimo && (
@@ -352,51 +394,27 @@ export default function ManagementView() {
                       {item.quantidade} un
                     </td>
                     <td className="px-6 py-4 text-sm text-primary-dark/60">{formatCurrency(item.valorUnitario)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.nome); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))
               ) : tab === 'custos' ? (
                 custos.filter(c => (c.descricao || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
-                  <tr key={item.id} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                  <tr key={item.id} onClick={() => handleOpenModal(item)} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
                     <td className="px-6 py-4 font-medium">{item.descricao}</td>
                     <td className="px-6 py-4 text-sm text-primary-dark/60">{item.categoria}</td>
                     <td className="px-6 py-4 text-sm text-red-500 font-medium">{formatCurrency(item.valor)}</td>
                     <td className="px-6 py-4 text-sm text-primary-dark/60">{item.data}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOpenModal(item); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-primary-gold transition-colors"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.descricao); }}
-                          className="p-1.5 bg-primary-cream rounded-lg text-primary-dark/40 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+                  </tr>
+                ))
+              ) : tab === 'atendentes' ? (
+                atendentes.filter(a => (a.nome || '').toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
+                  <tr key={item.id} onClick={() => handleOpenModal(item)} className="hover:bg-primary-cream/10 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 font-medium">{item.nome}</td>
+                    <td className="px-6 py-4 text-sm text-primary-dark/60">{item.telefone}</td>
+                    <td className="px-6 py-4 text-sm text-primary-gold font-medium">{item.percentualComissao}%</td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Módulo de estoque em desenvolvimento...</td></tr>
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-primary-dark/40 italic">Módulo selecionado não implementado...</td></tr>
               )}
             </tbody>
         </table>
@@ -413,7 +431,7 @@ export default function ManagementView() {
           >
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif text-primary-dark font-bold">
-                {editingId ? 'Editar' : 'Novo'} {tab === 'procedimentos' ? 'Procedimento' : tab === 'estoque' ? 'Produto' : 'Custo'}
+                {editingId ? 'Editar' : 'Novo'} {tab === 'procedimentos' ? 'Procedimento' : tab === 'estoque' ? 'Produto' : tab === 'atendentes' ? 'Atendente' : 'Custo'}
               </h3>
               <button 
                 onClick={() => setShowModal(false)}
@@ -483,12 +501,24 @@ export default function ManagementView() {
                     />
                   </div>
                 </div>
-                <button 
-                  type="submit"
-                  className="w-full py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
-                >
-                  {editingId ? 'Salvar Alterações' : 'Confirmar Cadastro'}
-                </button>
+                <div className="flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
+                  >
+                    {editingId ? 'Salvar Alterações' : 'Confirmar Cadastro'}
+                  </button>
+                  {editingId && (
+                    <button 
+                      type="button"
+                      onClick={() => { setShowModal(false); handleDelete(editingId, procForm.nome); }}
+                      className="py-4 px-6 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
+                      title="Excluir"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                </div>
               </form>
             ) : tab === 'estoque' ? (
               <form onSubmit={handleSaveProd} className="space-y-4">
@@ -547,12 +577,80 @@ export default function ManagementView() {
                     />
                   </div>
                 </div>
-                <button 
-                  type="submit"
-                  className="w-full py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
-                >
-                  {editingId ? 'Salvar Alterações' : 'Cadastrar Produto'}
-                </button>
+                <div className="flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
+                  >
+                    {editingId ? 'Salvar Alterações' : 'Cadastrar Produto'}
+                  </button>
+                  {editingId && (
+                    <button 
+                      type="button"
+                      onClick={() => { setShowModal(false); handleDelete(editingId, prodForm.nome); }}
+                      className="py-4 px-6 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
+                      title="Excluir"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                </div>
+              </form>
+            ) : tab === 'atendentes' ? (
+              <form onSubmit={handleSaveAtendente} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-primary-dark/40 uppercase tracking-widest">Nome da Atendente</label>
+                  <input 
+                    required
+                    type="text" 
+                    value={atendenteForm.nome}
+                    onChange={(e) => setAtendenteForm({...atendenteForm, nome: e.target.value})}
+                    className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl transition-all" 
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-primary-dark/40 uppercase tracking-widest">Telefone</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={atendenteForm.telefone}
+                      onChange={(e) => setAtendenteForm({...atendenteForm, telefone: e.target.value})}
+                      className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl transition-all" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-primary-dark/40 uppercase tracking-widest">Comissão (%)</label>
+                    <input 
+                      required
+                      type="number" 
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={atendenteForm.percentualComissao}
+                      onChange={(e) => setAtendenteForm({...atendenteForm, percentualComissao: e.target.value})}
+                      className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl transition-all" 
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
+                  >
+                    {editingId ? 'Salvar Alterações' : 'Cadastrar Atendente'}
+                  </button>
+                  {editingId && (
+                    <button 
+                      type="button"
+                      onClick={() => { setShowModal(false); handleDelete(editingId, atendenteForm.nome); }}
+                      className="py-4 px-6 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
+                      title="Excluir"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                </div>
               </form>
             ) : (
               <form onSubmit={handleSaveCusto} className="space-y-4">
@@ -599,17 +697,67 @@ export default function ManagementView() {
                     className="w-full px-4 py-2 bg-primary-cream/30 border border-primary-dark/5 rounded-xl transition-all" 
                   />
                 </div>
-                <button 
-                  type="submit"
-                  className="w-full py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
-                >
-                  {editingId ? 'Salvar Alterações' : 'Salvar Despesa'}
-                </button>
+                <div className="flex gap-3">
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 bg-primary-gold text-white rounded-xl font-bold shadow-lg shadow-primary-gold/20 hover:scale-[1.02] transition-transform"
+                  >
+                    {editingId ? 'Salvar Alterações' : 'Salvar Despesa'}
+                  </button>
+                  {editingId && (
+                    <button 
+                      type="button"
+                      onClick={() => { setShowModal(false); handleDelete(editingId, custoForm.descricao); }}
+                      className="py-4 px-6 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
+                      title="Excluir"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                </div>
               </form>
             )}
           </motion.div>
         </div>
       )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-primary-dark/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-primary-dark">Excluir item?</h3>
+                <p className="text-sm text-primary-dark/60">
+                  Tem certeza que deseja excluir "{deleteConfirm.name}"? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-3 bg-primary-cream text-primary-dark font-bold rounded-xl hover:bg-primary-cream/80 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

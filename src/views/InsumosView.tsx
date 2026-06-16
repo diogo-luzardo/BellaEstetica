@@ -18,7 +18,8 @@ import {
   Calendar,
   Layers,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   collection, 
@@ -267,10 +268,17 @@ export default function InsumosView() {
     }
   };
 
+  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
+
   // Delete promotional list along with all its prices
-  const handleDeleteList = async (listId: string) => {
-    if (!confirm('Deseja realmente excluir esta lista e todos os preços vinculados a ela do histórico?')) return;
+  const handleDeleteList = (listId: string, name: string) => {
+    setDeleteConfirm({ id: listId, name });
+  };
+
+  const confirmDeleteList = async () => {
+    if (!deleteConfirm) return;
     try {
+      const listId = deleteConfirm.id;
       const assocPrices = precos.filter(p => p.listaId === listId);
       const batch = writeBatch(db);
       
@@ -282,7 +290,7 @@ export default function InsumosView() {
       batch.delete(doc(db, 'listasPromocionais', listId));
 
       await batch.commit();
-      alert('Lista promocional e todos os preços vinculados foram excluídos com sucesso.');
+      setDeleteConfirm(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'listasPromocionais');
     }
@@ -963,7 +971,7 @@ export default function InsumosView() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <button
-                              onClick={() => handleDeleteList(list.id)}
+                              onClick={() => handleDeleteList(list.id, list.nome)}
                               className="p-1.5 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors"
                               title="Excluir lista promocional"
                             >
@@ -978,6 +986,44 @@ export default function InsumosView() {
               </table>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Confirmação de Exclusão */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-primary-dark/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-primary-dark">Excluir lista promocional?</h3>
+                <p className="text-sm text-primary-dark/60">
+                  Tem certeza que deseja excluir "{deleteConfirm.name}" e todos os preços vinculados a ela? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-3 bg-primary-cream text-primary-dark font-bold rounded-xl hover:bg-primary-cream/80 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteList}
+                  className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

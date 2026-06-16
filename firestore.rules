@@ -91,7 +91,15 @@ service cloud.firestore {
              && data.procedimentoIds is list
              && data.status in ['confirmado', 'pendente', 'cancelado', 'concluido']
              && data.data is timestamp
-             && (!('notas' in data) || (data.notas is string));
+             && (!('notas' in data) || (data.notas is string))
+             && (!('atendenteId' in data) || (data.atendenteId is string));
+    }
+
+    function isValidAtendente(data) {
+      return data.tenantId is string
+             && data.nome is string
+             && data.telefone is string
+             && (data.percentualComissao is number || data.percentualComissao is string);
     }
 
     function isValidCusto(data) {
@@ -199,8 +207,16 @@ service cloud.firestore {
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidAgendamento(incoming()) && isTenantOf(incoming());
       allow update: if isSignedIn() && isTenantOf(resource.data) && isValidAgendamento(incoming()) && isTenantOf(incoming())
-                      && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoIds']);
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'data', 'notas', 'profissionalId', 'procedimentoIds', 'atendenteId']);
       allow delete: if isSignedIn() && isTenantOf(resource.data);
+    }
+
+    match /atendentes/{atendenteId} {
+      allow list: if isSignedIn() && isTenantOf(resource.data);
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidAtendente(incoming()) && (isTenantOf(incoming()) || isManager());
+      allow update: if isSignedIn() && (isTenantOf(resource.data) || isManager()) && isValidAtendente(incoming()) && (isTenantOf(incoming()) || isManager());
+      allow delete: if isSignedIn() && (isTenantOf(resource.data) || isManager());
     }
 
     match /custos/{custoId} {
