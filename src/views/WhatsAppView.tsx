@@ -32,6 +32,7 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { Profissional, Procedimento, Cliente, Agendamento, Disponibilidade } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 import { useAuth } from '../contexts/AuthContext';
+import { validateBookingInput } from '../lib/bookingValidation';
 
 interface Message {
   id: number;
@@ -370,18 +371,9 @@ export default function WhatsAppView() {
       // If we are simulating "novo_coleta", check if details are fake or unsupplied.
       if (parsedResponse.booking && selectedSimulatedClientId === 'novo_coleta') {
         const { clientName, clientPhone } = parsedResponse.booking;
-        const lowerName = (clientName || '').toLowerCase();
-        const lowerPhone = (clientPhone || '').toLowerCase();
+        const validation = validateBookingInput(clientName, clientPhone);
 
-        const nameIsPlaceholder = !clientName || 
-          ['cliente', 'novo', 'paciente', 'cadastrado', 'pergunte', 'selecionado', 'informado', 'maria', 'joão', 'fulano', 'sicrano', 'visitante'].some(p => lowerName.includes(p)) ||
-          clientName.trim().length < 3;
-
-        const phoneIsPlaceholder = !clientPhone || 
-          ['telefone', 'informado', 'sem', '00000', '12345', 'não', 'null', 'undefined'].some(p => lowerPhone.includes(p)) ||
-          clientPhone.replace(/\D/g, '').length < 8;
-
-        if (nameIsPlaceholder || phoneIsPlaceholder) {
+        if (!validation.isValid) {
           console.log("Validação: IA tentou agendar sem os detalhes reais do paciente. Cancelando agendamento direto.");
           // We override the AI reply to strictly request details.
           responseText = "Com todo prazer! Mas para que eu possa concluir sua reserva de horário com segurança, você poderia me informar o seu **Nome Completo** e um **Telefone com DDD** por aqui? Assim já realizo o seu cadastro no sistema da BellaEstética! ✨🌸";
