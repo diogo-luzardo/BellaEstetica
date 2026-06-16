@@ -132,6 +132,28 @@ service cloud.firestore {
              && (!('procedimentosIds' in data) || (data.procedimentosIds is list));
     }
 
+    function isValidListaPromocional(data) {
+      return data.keys().hasAll(['tenantId', 'titulo', 'dataRef', 'rawText', 'createdAt'])
+             && data.tenantId is string
+             && data.titulo is string && data.titulo.size() > 0
+             && data.dataRef is string && data.dataRef.size() > 0
+             && data.rawText is string
+             && data.createdAt is timestamp;
+    }
+
+    function isValidPrecoInsumo(data) {
+      return data.keys().hasAll(['tenantId', 'listaId', 'nome', 'categoria', 'precoUnitario', 'tiers', 'dataRef', 'createdAt'])
+             && data.tenantId is string
+             && isValidId(data.listaId)
+             && data.nome is string && data.nome.size() > 0
+             && data.categoria is string
+             && data.precoUnitario is number
+             && data.tiers is list
+             && data.dataRef is string
+             && data.createdAt is timestamp
+             && (!('detalhes' in data) || (data.detalhes is string));
+    }
+
     // --- Collection Matches ---
 
     match /tenants/{tenantId} {
@@ -146,7 +168,7 @@ service cloud.firestore {
     }
 
     match /clientes/{clienteId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidCliente(incoming()) && isTenantOf(incoming());
       allow update: if isSignedIn() && isTenantOf(resource.data) && isValidCliente(incoming()) && isTenantOf(incoming())
@@ -155,7 +177,7 @@ service cloud.firestore {
     }
 
     match /procedimentos/{procedimentoId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidProcedimento(incoming()) && isTenantOf(incoming()) && isManager();
       allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProcedimento(incoming()) && isTenantOf(incoming())
@@ -164,7 +186,7 @@ service cloud.firestore {
     }
 
     match /profissionais/{profissionalId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidProfissional(incoming()) && isTenantOf(incoming()) && isManager();
       allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProfissional(incoming()) && isTenantOf(incoming())
@@ -173,7 +195,7 @@ service cloud.firestore {
     }
 
     match /agendamentos/{agendamentoId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidAgendamento(incoming()) && isTenantOf(incoming());
       allow update: if isSignedIn() && isTenantOf(resource.data) && isValidAgendamento(incoming()) && isTenantOf(incoming())
@@ -182,7 +204,7 @@ service cloud.firestore {
     }
 
     match /custos/{custoId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidCusto(incoming()) && isTenantOf(incoming()) && isManager();
       allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidCusto(incoming()) && isTenantOf(incoming())
@@ -191,7 +213,7 @@ service cloud.firestore {
     }
 
     match /produtos/{produtoId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidProduto(incoming()) && isTenantOf(incoming()) && isManager();
       allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidProduto(incoming()) && isTenantOf(incoming())
@@ -200,7 +222,7 @@ service cloud.firestore {
     }
 
     match /fichasAnamnese/{fichaId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidFichaAnamnese(incoming()) && isTenantOf(incoming());
       allow update: if isSignedIn() && isTenantOf(resource.data) && isValidFichaAnamnese(incoming()) && isTenantOf(incoming())
@@ -208,11 +230,29 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
     match /disponibilidades/{disponibilidadeId} {
-      allow list: if isSignedIn() && resource.data.tenantId == currentUserData().tenantId;
+      allow list: if isSignedIn() && isTenantOf(resource.data);
       allow get: if isSignedIn() && isTenantOf(resource.data);
       allow create: if isSignedIn() && isValidDisponibilidade(incoming()) && isTenantOf(incoming());
       allow update: if isSignedIn() && isTenantOf(resource.data) && isValidDisponibilidade(incoming()) && isTenantOf(incoming())
                       && incoming().diff(existing()).affectedKeys().hasOnly(['aberta', 'procedimentosIds']);
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
+    }
+
+    match /listasPromocionais/{id} {
+      allow list: if isSignedIn() && isTenantOf(resource.data);
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidListaPromocional(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidListaPromocional(incoming()) && isTenantOf(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['titulo', 'dataRef', 'rawText']);
+      allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
+    }
+
+    match /precosInsumos/{id} {
+      allow list: if isSignedIn() && isTenantOf(resource.data);
+      allow get: if isSignedIn() && isTenantOf(resource.data);
+      allow create: if isSignedIn() && isValidPrecoInsumo(incoming()) && isTenantOf(incoming()) && isManager();
+      allow update: if isSignedIn() && isTenantOf(resource.data) && isManager() && isValidPrecoInsumo(incoming()) && isTenantOf(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'categoria', 'precoUnitario', 'tiers', 'detalhes', 'dataRef']);
       allow delete: if isSignedIn() && isTenantOf(resource.data) && isManager();
     }
   }

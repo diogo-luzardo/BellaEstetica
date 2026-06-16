@@ -56,6 +56,30 @@ export default function WhatsAppView() {
   const [customClientName, setCustomClientName] = useState<string>('');
   const [customClientPhone, setCustomClientPhone] = useState<string>('');
 
+  const [notificacoesDoutoras, setNotificacoesDoutoras] = useState<{
+    id: number;
+    doctorName: string;
+    doctorPhone: string;
+    clientName: string;
+    clientPhone: string;
+    date: string;
+    time: string;
+    service: string;
+    text: string;
+    sentAt: string;
+  }[]>(() => {
+    try {
+      const stored = localStorage.getItem('notif_doutoras');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('notif_doutoras', JSON.stringify(notificacoesDoutoras));
+  }, [notificacoesDoutoras]);
+
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, type: 'system', text: 'Olá! Sou a Bella, sua assistente da BellaEstética. Como posso ajudar com sua beleza hoje? 🏠✨', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
   ]);
@@ -162,7 +186,7 @@ export default function WhatsAppView() {
     };
   }, [currentTenantId]);
 
-  const generateAIResponse = async (userText: string) => {
+  const generateAIResponse = async (userText: string, currentHistory: Message[]) => {
     setIsTyping(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
@@ -208,6 +232,11 @@ export default function WhatsAppView() {
           }).filter(Boolean).join('\n')
         : 'Sem disponibilidades cadastrais específicas. Use o horário de funcionamento padrão de Segunda a Sábado das 08:00 às 18:30.';
 
+      // Format conversation history
+      const formattedHistory = currentHistory
+        .map(m => m.type === 'client' ? `Paciente: ${m.text}` : `Bella (IA): ${m.text}`)
+        .join('\n');
+
       const context = `
         Você é a Bella, assistente virtual de luxo da clínica BellaEstética.
         Seja extremamente cordial, use alguns emojis e trate agendamentos com toda precisão estética.
@@ -225,8 +254,8 @@ export default function WhatsAppView() {
         
         ---
         DADOS DO PACIENTE ATUAL DO ATENDIMENTO WHATSAPP:
-        - Nome atual: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientName ? customClientName : 'Não cadastrado nos dados da IA/Pergunte') : finalClientName}
-        - Telefone atual: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientPhone ? customClientPhone : 'Não cadastrado nos dados da IA/Pergunte') : finalClientPhone}
+        - Nome atual do sistema: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientName ? customClientName : 'Não cadastrado nos dados da IA/Pergunte') : finalClientName}
+        - Telefone atual do sistema: ${selectedSimulatedClientId === 'novo_coleta' ? (customClientPhone ? customClientPhone : 'Não cadastrado nos dados da IA/Pergunte') : finalClientPhone}
         - Status do cliente: ${selectedSimulatedClientId === 'novo_coleta' ? 'NOVO PACIENTE (Simulado)' : 'PACIENTE EXISTENTE NO SISTEMA'}
 
         ---
@@ -237,19 +266,27 @@ export default function WhatsAppView() {
         HORÁRIOS DE DISPONIBILIDADE DO EXPEDIENTE (Disponibilidades abertas de especialistas):
         ${formattedSlots}
 
+        ---
+        HISTÓRICO DA CONVERSAÇÃO ATUAL (Consulte para saber o que já foi dito, o nome informado e o telefone):
+        ${formattedHistory}
+
+        ---
+        MENSAGEM MAIS RECENTE ENVIADA PELO PACIENTE (Responda a ela):
+        "${userText}"
+
         DIRETRIZES E REGRAS CRÍTICAS DE CONVERSAÇÃO (SIGA À RISCA):
         1. MERA SONDAGEM / PERGUNTAS DE DISPONIBILIDADE: Se o paciente apenas perguntar se há horários ativos, se há agenda de Botox para hoje, preços, ou se estiver tirando qualquer dúvida, responda acolhedoramente informando suas opções de horários de folga ou funcionamento comercial. Mantenha o objeto "booking" como null! NÃO PREENCHA o objeto "booking" para perguntas ou sondagens de horários.
-        2. COLETAR DADOS PARA NOVOS PACIENTES: Para novos pacientes (onde o Nome atual ou Telefone atual nos dados acima constam como 'Não cadastrado nos dados da IA/Pergunte'), você é terminantemente PROIBIDA de preencher o objeto "booking" com dados inventados ou genéricos. Você DEVE primeiro solicitar educadamente o Nome Completo e o Telefone de contato dele. Enquanto ele não os fornecer formalmente no chat, mantenha "booking" obrigatoriamente como null na sua resposta JSON.
+        2. COLETAR DADOS PARA NOVOS PACIENTES: Para novos pacientes (onde o Nome atual ou Telefone atual nos dados acima constam como 'Não cadastrado nos dados da IA/Pergunte' ou não foram informados no histórico de mensagens acima), você é terminantemente PROIBIDA de preencher o objeto "booking" com dados inventados, vazios ou genéricos (como "Cliente Novo", "Não informado", etc). Você DEVE primeiro solicitar educadamente o Nome Completo e o Telefone de contato dele. Enquanto ele não os fornecer formalmente no chat, mantenha "booking" obrigatoriamente como null na sua resposta JSON.
         3. QUANDO AGENDAR (REQUISITOS): Você SÓ PODERÁ preencher e retornar o objeto "booking" (não-null) quando se cumprirem TODOS os requisitos abaixo cumulativamente:
            - O paciente der uma instrução explícita de confirmação de agendamento (ex: "pode agendar", "quero marcar", "confirma para mim para hoje às 14:30 com tal profissional").
-           - Você possuir o Nome Completo do paciente.
-           - Você possuir o Telefone do paciente.
+           - Você possuir o Nome Completo verídico informado pelo próprio paciente no histórico das mensagens.
+           - Você possuir o Telefone verídico informado pelo próprio paciente no histórico.
            - Você possuir um dia e horário específicos acordados.
            - O serviço desejado constar na lista de PROCEDIMENTOS permitidos.
            - O profissional preferido estar selecionado.
            Se faltar qualquer um desses itens, mantenha "booking" como null e solicite amigavelmente o dado que falta em sua resposta ("reply").
         4. Se preencher "booking" (somente nas condições perfeitas descritas na Regra 3), garanta que:
-           - "date" seja no formato YYYY-MM-DD (converta termos como "hoje" para ${currentDateString} convertido para YYYY-MM-DD, "amanhã" ou "segunda que vem" para datas reais com base no dia de hoje ${currentDateString}).
+           - "date" seja no formato YYYY-MM-DD (converta termos como "hoje" para data real com base no dia de hoje ${currentDateString}, "amanhã" ou "segunda que vem" para datas reais com base no dia de hoje ${currentDateString}).
            - "time" seja no formato HH:MM (ex: "18:00").
            - "profissionalId" seja o ID real do profissional escolhido (ex: "${profissionais[0]?.id || ''}").
            - "procedimentoIds" seja uma lista contendo os IDs reais correspondentes (ex: ["${procedimentos[0]?.id || ''}"]).
@@ -327,7 +364,30 @@ export default function WhatsAppView() {
         }
       }
 
-      const responseText = parsedResponse.reply;
+      let responseText = parsedResponse.reply;
+
+      // STAGE 1: Strict Validation to verify if AI booked without actual name/phone info.
+      // If we are simulating "novo_coleta", check if details are fake or unsupplied.
+      if (parsedResponse.booking && selectedSimulatedClientId === 'novo_coleta') {
+        const { clientName, clientPhone } = parsedResponse.booking;
+        const lowerName = (clientName || '').toLowerCase();
+        const lowerPhone = (clientPhone || '').toLowerCase();
+
+        const nameIsPlaceholder = !clientName || 
+          ['cliente', 'novo', 'paciente', 'cadastrado', 'pergunte', 'selecionado', 'informado', 'maria', 'joão', 'fulano', 'sicrano', 'visitante'].some(p => lowerName.includes(p)) ||
+          clientName.trim().length < 3;
+
+        const phoneIsPlaceholder = !clientPhone || 
+          ['telefone', 'informado', 'sem', '00000', '12345', 'não', 'null', 'undefined'].some(p => lowerPhone.includes(p)) ||
+          clientPhone.replace(/\D/g, '').length < 8;
+
+        if (nameIsPlaceholder || phoneIsPlaceholder) {
+          console.log("Validação: IA tentou agendar sem os detalhes reais do paciente. Cancelando agendamento direto.");
+          // We override the AI reply to strictly request details.
+          responseText = "Com todo prazer! Mas para que eu possa concluir sua reserva de horário com segurança, você poderia me informar o seu **Nome Completo** e um **Telefone com DDD** por aqui? Assim já realizo o seu cadastro no sistema da BellaEstética! ✨🌸";
+          parsedResponse.booking = null;
+        }
+      }
 
       const aiMsg: Message = {
         id: Date.now(),
@@ -364,7 +424,7 @@ export default function WhatsAppView() {
             });
             targetClientId = newClientRef.id;
 
-            // Save variables locally
+            // Save variables locally to maintain continuity
             setCustomClientName(clientName);
             setCustomClientPhone(clientPhone);
           }
@@ -386,13 +446,51 @@ export default function WhatsAppView() {
           notas: 'Consulta agendada de forma automática pela Assistente de IA Bella'
         });
 
-        // Add a nice system notification in chat that booking was created!
+        // NOTIFICATION FOR THE DOCTOR / SPECIALIST
+        const doctor = profissionais.find(p => p.id === profissionalId);
+        const doctorName = doctor ? doctor.nome : 'Dra. Especialista';
+        const doctorPhone = doctor ? doctor.telefone || '(vazio)' : '(não informado)';
+        const selectedProcs = procedimentos.filter(p => procedimentoIds.includes(p.id));
+        const procsLabel = selectedProcs.map(p => p.nome).join(', ');
+
+        const doctorNotifMessage = `Dra. *${doctorName}*! 💅\n\n` +
+          `*Novo agendamento confirmado para você pelo WhatsApp:* \n` +
+          `📅 Data: *${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}*\n` +
+          `⏰ Horário: *${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} h*\n` +
+          `👤 Paciente: *${clientName}* (${clientPhone})\n` +
+          `✨ Serviços: *${procsLabel}*\n` +
+          `💬 Nota: Agendamento e confirmação imediatos gerados por Assistente de IA Bella.`;
+
+        // Update Dr. notifications list so user can see it instantly
+        setNotificacoesDoutoras(prev => [
+          {
+            id: Date.now(),
+            doctorName,
+            doctorPhone,
+            clientName,
+            clientPhone,
+            date,
+            time,
+            service: procsLabel,
+            text: doctorNotifMessage,
+            sentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          },
+          ...prev
+        ]);
+
+        // Add a nice system notification in chat that booking was created AND doctor notified!
         setMessages(prev => [
           ...prev, 
           {
             id: Date.now() + 1,
             type: 'system',
             text: `📢 [SISTEMA]: Agendamento registrado com sucesso no banco de dados! Dia ${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')} às ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          },
+          {
+            id: Date.now() + 2,
+            type: 'system',
+            text: `📬 [SISTEMA - WHATSAPP]: Notificação enviada com sucesso no celular da ${doctorName} (${doctorPhone}) sobre este compromisso!`,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -435,11 +533,12 @@ export default function WhatsAppView() {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     
-    setMessages(prev => [...prev, newMsg]);
+    const updatedMessages = [...messages, newMsg];
+    setMessages(updatedMessages);
     const currentInput = inputValue;
     setInputValue('');
 
-    generateAIResponse(currentInput);
+    generateAIResponse(currentInput, updatedMessages);
   };
 
   return (
@@ -545,6 +644,49 @@ export default function WhatsAppView() {
                   <p className="text-[10px] text-primary-dark/40 italic">Nenhum agendamento ativo.</p>
                 )}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Notificações das Doutoras */}
+        <div className="bg-white p-6 rounded-2xl border border-primary-dark/5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between text-primary-gold">
+            <div className="flex items-center gap-2">
+              <Smartphone size={20} />
+              <h3 className="text-base font-serif font-bold text-primary-dark">Notificações p/ Médicas</h3>
+            </div>
+            {notificacoesDoutoras.length > 0 && (
+              <button
+                onClick={() => setNotificacoesDoutoras([])}
+                className="text-[10px] text-red-500 hover:underline font-bold transition-all"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-primary-dark/60">
+            Mensagens enviadas automaticamente para o WhatsApp das especialistas assim que o agendamento é confirmado:
+          </p>
+          {notificacoesDoutoras.length > 0 ? (
+            <div className="space-y-3 max-h-[180px] overflow-y-auto pr-1">
+              {notificacoesDoutoras.map((notif) => (
+                <div key={notif.id} className="bg-green-50/60 border border-green-100 p-3 rounded-xl text-xs space-y-1.5 relative shadow-sm">
+                  <div className="flex justify-between items-center text-[10px] text-green-800 font-bold uppercase tracking-wider">
+                    <span>📱 WhatsApp Enviado</span>
+                    <span className="font-normal text-[9px] text-gray-400">{notif.sentAt}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-700 leading-relaxed font-sans whitespace-pre-line bg-white/75 p-2 rounded-lg border border-green-50 shadow-inner">
+                    {notif.text}
+                  </p>
+                  <div className="text-[10px] text-primary-dark/60 flex flex-wrap gap-x-2">
+                    <span>👩‍⚕️ <b>Especialista:</b> {notif.doctorName} ({notif.doctorPhone})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-gray-50 rounded-xl p-4 text-center border-2 border-dashed border-gray-100">
+              <p className="text-[11px] text-gray-400 italic">Nenhuma mensagem disparada ainda.</p>
             </div>
           )}
         </div>

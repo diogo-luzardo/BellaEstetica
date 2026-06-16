@@ -17,7 +17,8 @@ import {
   LogIn,
   ShieldCheck,
   Building,
-  User
+  User,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -34,8 +35,9 @@ import AgendaView from './views/AgendaView';
 import WhatsAppView from './views/WhatsAppView';
 import ProfileView from './views/ProfileView';
 import TenantsView from './views/TenantsView';
+import InsumosView from './views/InsumosView';
 
-type View = 'dashboard' | 'clientes' | 'agenda' | 'gestao' | 'profissionais' | 'whatsapp' | 'perfil' | 'unidades';
+type View = 'dashboard' | 'clientes' | 'agenda' | 'gestao' | 'profissionais' | 'whatsapp' | 'perfil' | 'unidades' | 'insumos';
 
 export default function App() {
   const { user, userProfile, loading } = useAuth();
@@ -54,6 +56,7 @@ export default function App() {
     { id: 'clientes' as View, label: 'Clientes', icon: Users },
     { id: 'agenda' as View, label: 'Agenda', icon: Calendar },
     { id: 'profissionais' as View, label: 'Especialistas', icon: UserCheck },
+    { id: 'insumos' as View, label: 'Preços de Insumos', icon: ClipboardList, roles: ['admin', 'gerencia'] },
     { id: 'gestao' as View, label: 'Gerência / Finanças', icon: DollarSign, roles: ['admin', 'gerencia'] },
     { id: 'unidades' as View, label: 'Unidades / LGPD', icon: Building, roles: ['admin'] },
     { id: 'perfil' as View, label: 'Minha Conta', icon: User },
@@ -71,6 +74,7 @@ export default function App() {
       case 'clientes': return <ClientsView />;
       case 'agenda': return <AgendaView initialProfId={selectedProfessionalId} />;
       case 'gestao': return <ManagementView />;
+      case 'insumos': return <InsumosView />;
       case 'profissionais': return <ProfessionalsView onVerAgenda={navigateToAgenda} />;
       case 'whatsapp': return <WhatsAppView />;
       case 'perfil': return <ProfileView />;

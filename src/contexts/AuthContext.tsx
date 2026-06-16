@@ -45,9 +45,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (userDoc.exists()) {
             const profile = userDoc.data() as Usuario;
             // Force admin role if email matches the master account
-            if (u.email === 'diogohxcx@gmail.com' && profile.role !== 'admin') {
+            if (u.email === 'diogohxcx@gmail.com' && (profile.role !== 'admin' || profile.tenantId !== 'admin_support')) {
               profile.role = 'admin';
-              await setDoc(doc(db, 'usuarios', u.uid), { role: 'admin' }, { merge: true });
+              profile.tenantId = 'admin_support';
+              await setDoc(doc(db, 'usuarios', u.uid), { role: 'admin', tenantId: 'admin_support' }, { merge: true });
             }
             setUserProfile(profile);
             setCurrentTenantId(profile.tenantId);

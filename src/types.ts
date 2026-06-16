@@ -129,3 +129,25 @@ export interface Tenant {
   expiresAt: any; // Timestamp
   createdAt: any; // Timestamp
 }
+
+export interface ListaPromocional {
+  id: string;
+  tenantId: string;
+  titulo: string;
+  dataRef: string; // "YYYY-MM"
+  rawText: string;
+  createdAt: any;
+}
+
+export interface PrecoInsumo {
+  id: string;
+  tenantId: string;
+  listaId: string;
+  nome: string;
+  categoria: string;
+  precoUnitario: number;
+  tiers: { quantidade: number; precoCada: number }[];
+  detalhes?: string;
+  dataRef: string; // "YYYY-MM"
+  createdAt: any;
+}

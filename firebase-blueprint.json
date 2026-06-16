@@ -145,6 +145,36 @@ const blueprint = {
         createdAt: { type: "string", format: "date-time" }
       },
       required: ["name", "plan", "status", "expiresAt"]
+    },
+    listaPromocional: {
+      title: "Lista Promocional",
+      description: "Uma lista copiada de preços de fornecedores",
+      type: "object",
+      properties: {
+        tenantId: { type: "string" },
+        titulo: { type: "string" },
+        dataRef: { type: "string" },
+        rawText: { type: "string" },
+        createdAt: { type: "string", format: "date-time" }
+      },
+      required: ["tenantId", "titulo", "dataRef", "rawText", "createdAt"]
+    },
+    precoInsumo: {
+      title: "Preço Insumo",
+      description: "Detalhamento e histórico de preço de insumo estético",
+      type: "object",
+      properties: {
+        tenantId: { type: "string" },
+        listaId: { type: "string" },
+        nome: { type: "string" },
+        categoria: { type: "string" },
+        precoUnitario: { type: "number" },
+        tiers: { type: "array", items: { type: "object" } },
+        detalhes: { type: "string" },
+        dataRef: { type: "string" },
+        createdAt: { type: "string", format: "date-time" }
+      },
+      required: ["tenantId", "listaId", "nome", "categoria", "precoUnitario", "tiers", "dataRef", "createdAt"]
     }
   },
   firestore: {
@@ -157,7 +187,9 @@ const blueprint = {
     "/custos/{custoId}": { schema: "custo", description: "Controle financeiro de despesas" },
     "/produtos/{produtoId}": { schema: "produto", description: "Estoque de produtos" },
     "/fichasAnamnese/{fichaId}": { schema: "fichaAnamnese", description: "Fichas de anamnese preenchidas" },
-    "/disponibilidades/{disponibilidadeId}": { schema: "disponibilidade", description: "Horários de atendimento dos profissionais" }
+    "/disponibilidades/{disponibilidadeId}": { schema: "disponibilidade", description: "Horários de atendimento dos profissionais" },
+    "/listasPromocionais/{id}": { schema: "listaPromocional", description: "Listas promocionais de distribuidores salvas" },
+    "/precosInsumos/{id}": { schema: "precoInsumo", description: "Entradas históricas de preços de cada produto" }
   }
 };
 
